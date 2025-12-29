@@ -4,12 +4,20 @@
 #include <iostream>
 #include <cstring>
 
-Engine::Engine() : scrollOffset(0.0f), inputLength(0) {
+Engine::Engine() : scrollOffset(0.0f), inputLength(0), fontLoaded(false) {
     memset(inputBuffer, 0, sizeof(inputBuffer));
-    initFont();
 }
 
 Engine::~Engine() {
+    if (fontLoaded) {
+        FT_Done_Face(face);
+        FT_Done_FreeType(ft);
+    }
+    
+    // Clean up OpenGL textures
+    for (auto& glyph : glyphs) {
+        glDeleteTextures(1, &glyph.second.textureID);
+    }
 }
 
 bool Engine::initialize() {
@@ -19,6 +27,35 @@ bool Engine::initialize() {
     
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D);
+    
+    // Initialize FreeType
+    if (!initFreeType()) {
+        std::cerr << "Failed to initialize FreeType" << std::endl;
+        return false;
+    }
+    
+    // Try to load system font (Helvetica or Arial)
+    const char* fontPaths[] = {
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Arial.ttf", 
+        "/Library/Fonts/Arial.ttf",
+        "/System/Library/Fonts/Times.ttc" // fallback
+    };
+    
+    bool fontLoadedSuccessfully = false;
+    for (const char* fontPath : fontPaths) {
+        if (loadFont(fontPath)) {
+            std::cout << "Loaded font: " << fontPath << std::endl;
+            fontLoadedSuccessfully = true;
+            break;
+        }
+    }
+    
+    if (!fontLoadedSuccessfully) {
+        std::cerr << "Failed to load any system font" << std::endl;
+        return false;
+    }
     
     // Test basic OpenGL functionality
     GLenum error = glGetError();
@@ -156,87 +193,115 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
     }
 }
 
-void Engine::initFont() {
-    memset(fontData, 0, sizeof(fontData));
+bool Engine::initFreeType() {
+    if (FT_Init_FreeType(&ft)) {
+        std::cerr << "Could not init FreeType Library" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+bool Engine::loadFont(const char* fontPath) {
+    if (FT_New_Face(ft, fontPath, 0, &face)) {
+        return false; // Failed to load font
+    }
     
-    // Simple 8x8 bitmap font for basic ASCII characters
-    unsigned char charPatterns[][8] = {
-        // Space (32)
-        {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-        // ! (33)
-        {0x18, 0x3C, 0x3C, 0x18, 0x18, 0x00, 0x18, 0x00},
-        // " (34)
-        {0x66, 0x66, 0x66, 0x00, 0x00, 0x00, 0x00, 0x00},
-        // # (35)
-        {0x66, 0xFF, 0x66, 0x66, 0xFF, 0x66, 0x00, 0x00},
-        // ... continuing with more characters
-        // A (65)
-        {0x3C, 0x66, 0x66, 0x7E, 0x66, 0x66, 0x66, 0x00},
-        // B (66)
-        {0x7C, 0x66, 0x66, 0x7C, 0x66, 0x66, 0x7C, 0x00},
-        // C (67)
-        {0x3C, 0x66, 0x60, 0x60, 0x60, 0x66, 0x3C, 0x00},
+    // Set size to load glyphs as (48 pixel height)
+    FT_Set_Pixel_Sizes(face, 0, 24);
+    
+    fontLoaded = true;
+    
+    // Load basic ASCII characters
+    for (unsigned char c = 32; c < 127; c++) {
+        loadGlyph(c);
+    }
+    
+    return true;
+}
+
+void Engine::loadGlyph(char c) {
+    if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
+        std::cerr << "Failed to load glyph for: " << c << std::endl;
+        return;
+    }
+
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_ALPHA,
+        face->glyph->bitmap.width,
+        face->glyph->bitmap.rows,
+        0,
+        GL_ALPHA,
+        GL_UNSIGNED_BYTE,
+        face->glyph->bitmap.buffer
+    );
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    Glyph glyph = {
+        texture,
+        (int)face->glyph->bitmap.width,
+        (int)face->glyph->bitmap.rows,
+        (int)face->glyph->bitmap_left,
+        (int)face->glyph->bitmap_top,
+        (int)(face->glyph->advance.x >> 6)
     };
-    
-    // Copy patterns to font data (starting from space character 32)
-    for (int i = 0; i < 3; i++) {
-        memcpy(fontData[32 + i], charPatterns[i], 8);
-    }
-    // A, B, C
-    memcpy(fontData[65], charPatterns[4], 8);
-    memcpy(fontData[66], charPatterns[5], 8);
-    memcpy(fontData[67], charPatterns[6], 8);
-    
-    // Simple patterns for digits and letters
-    for (int c = 48; c <= 57; c++) { // 0-9
-        for (int row = 0; row < 8; row++) {
-            fontData[c][row] = 0x3C + (row % 4) * 8;
-        }
-    }
-    
-    for (int c = 97; c <= 122; c++) { // a-z
-        for (int row = 0; row < 8; row++) {
-            fontData[c][row] = 0x18 + (row % 3) * 16;
-        }
-    }
+
+    glyphs[c] = glyph;
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Engine::renderChar(char c, float x, float y) {
-    if (c < 0 || c >= 128) return;
-    
-    glColor3f(0.0f, 0.0f, 0.0f); // Black text
-    
-    for (int row = 0; row < 8; row++) {
-        unsigned char rowData = fontData[(unsigned char)c][row];
-        for (int col = 0; col < 8; col++) {
-            if (rowData & (0x80 >> col)) {
-                float px = x + col;
-                float py = y + row;
-                
-                glBegin(GL_QUADS);
-                glVertex2f(px, py);
-                glVertex2f(px + 1, py);
-                glVertex2f(px + 1, py + 1);
-                glVertex2f(px, py + 1);
-                glEnd();
-            }
-        }
+    if (glyphs.find(c) == glyphs.end()) {
+        return;
     }
+    
+    Glyph& g = glyphs[c];
+    
+    float xpos = x + g.bearingX;
+    float ypos = y - g.bearingY;  // Simple baseline calculation
+    float w = g.width;
+    float h = g.height;
+    
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, g.textureID);
+    glColor3f(1.0f, 1.0f, 1.0f);
+    
+    glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos, ypos + h);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h); 
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos, ypos);
+    glEnd();
+    
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
 }
 
 void Engine::renderText(const char* text, float x, float y) {
-    float charWidth = 8.0f;
-    float lineHeight = 12.0f;
     float currentX = x;
     float currentY = y;
     
-    for (int i = 0; text[i] != '\0'; i++) {
-        if (text[i] == '\n') {
-            currentY += lineHeight;
+    for (const char* p = text; *p; p++) {
+        if (*p == '\n') {
+            currentY += 24;
             currentX = x;
-        } else {
-            renderChar(text[i], currentX, currentY);
-            currentX += charWidth;
+            continue;
+        }
+        
+        if (glyphs.find(*p) != glyphs.end()) {
+            renderChar(*p, currentX, currentY);
+            currentX += glyphs[*p].advance;
         }
     }
 }
