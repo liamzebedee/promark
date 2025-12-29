@@ -120,13 +120,15 @@ TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
 Size TextLayoutObject::computeIntrinsicSize() const {
     // Get text and compute size based on parent object type
     std::string text = sourceObject->getText();
-    if (text.empty()) {
-        return Size(0, 0);
-    }
     
     float fontSize = getFontSize();
     float charWidth = fontSize * 0.6f; // Rough character width estimate
     float lineHeight = fontSize * 1.2f; // Line height with some spacing
+    
+    if (text.empty()) {
+        // Empty text still takes up vertical space (for blank lines)
+        return Size(0, lineHeight);
+    }
     
     // Simple width calculation (actual implementation would use font metrics)
     float width = text.length() * charWidth;

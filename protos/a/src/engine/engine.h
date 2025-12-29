@@ -62,4 +62,5 @@ private:
     int findWordBoundary(int pos, int direction);
     void insertChar(char c);
     void deleteChar();
+    void deleteWordBackward();
 };

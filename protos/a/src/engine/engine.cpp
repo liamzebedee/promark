@@ -134,6 +134,9 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 inputLength -= (end - start);
                 cursorPos = start;
                 hasSelection = false;
+            } else if (alt && cursorPos > 0) {
+                // Alt+Backspace: delete word backwards
+                deleteWordBackward();
             } else if (cursorPos > 0) {
                 deleteChar();
             }
@@ -420,6 +423,26 @@ void Engine::deleteChar() {
             std::string newText(inputBuffer, inputLength);
             textBuffer->setText(newText);
             markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+        }
+    }
+}
+
+void Engine::deleteWordBackward() {
+    if (cursorPos > 0) {
+        int wordStart = findWordBoundary(cursorPos, -1);
+        int deleteCount = cursorPos - wordStart;
+        
+        if (deleteCount > 0) {
+            memmove(inputBuffer + wordStart, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+            inputLength -= deleteCount;
+            cursorPos = wordStart;
+            
+            // Update markdown content
+            if (textBuffer && markdownRenderer) {
+                std::string newText(inputBuffer, inputLength);
+                textBuffer->setText(newText);
+                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+            }
         }
     }
 }

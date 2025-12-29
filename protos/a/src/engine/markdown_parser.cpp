@@ -24,8 +24,13 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string&
     
     while (std::getline(stream, line)) {
         
-        // Skip empty lines
+        // Handle empty lines as empty paragraphs (preserves spacing)
         if (line.empty()) {
+            auto emptyParagraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
+            auto emptyText = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+            emptyText->setText(""); // Empty text creates visual spacing
+            emptyParagraph->addChild(std::move(emptyText));
+            document->addChild(std::move(emptyParagraph));
             continue;
         }
         
