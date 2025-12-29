@@ -17,7 +17,7 @@ out/
 cmake-build-*/
 
 # Vendor dependencies
-/protos/a/vendor/
+# /protos/a/vendor/
 
 # IDE and editor files
 .vscode/
@@ -35,7 +35,7 @@ cmake-build-*/
 
 # Dependencies
 node_modules/
-vendor/
+#vendor/
 
 # Logs
 *.log
