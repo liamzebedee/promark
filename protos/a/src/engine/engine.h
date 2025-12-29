@@ -3,6 +3,8 @@
 #include FT_FREETYPE_H
 #include <string>
 #include <map>
+#include <memory>
+#include "markdown_renderer.h"
 
 class Engine {
 public:
@@ -25,6 +27,10 @@ private:
     int selectionStart;
     int selectionEnd;
     bool hasSelection;
+    
+    // Markdown rendering system
+    std::unique_ptr<MarkdownRenderer> markdownRenderer;
+    std::unique_ptr<TextBuffer> textBuffer;
     
     // FreeType font system
     FT_Library ft;

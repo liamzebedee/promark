@@ -8,6 +8,21 @@
 Engine::Engine() : scrollOffset(0.0f), inputLength(0), fontLoaded(false), 
                    cursorPos(0), selectionStart(0), selectionEnd(0), hasSelection(false) {
     memset(inputBuffer, 0, sizeof(inputBuffer));
+    
+    // Initialize markdown rendering system
+    markdownRenderer = std::make_unique<MarkdownRenderer>();
+    textBuffer = std::make_unique<TextBuffer>();
+    
+    // Set up initial markdown content
+    std::string initialContent = "# Welcome to Markdown Editor\n\nThis is a paragraph of body text that should appear smaller than the heading above.";
+    
+    // Copy to input buffer for editing
+    strncpy(inputBuffer, initialContent.c_str(), sizeof(inputBuffer) - 1);
+    inputLength = initialContent.length();
+    cursorPos = inputLength;
+    
+    textBuffer->setText(initialContent);
+    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
 }
 
 Engine::~Engine() {
@@ -71,14 +86,6 @@ bool Engine::initialize() {
 }
 
 void Engine::render(int width, int height) {
-    static int frameCount = 0;
-    frameCount++;
-    
-    if (frameCount % 60 == 0) { // Log every 60 frames
-        std::cout << "Render frame " << frameCount << ", size: " << width << "x" << height << std::endl;
-        std::cout << "Input buffer: '" << inputBuffer << "'" << std::endl;
-    }
-    
     glViewport(0, 0, width, height);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // White background
     glClear(GL_COLOR_BUFFER_BIT);
@@ -89,56 +96,11 @@ void Engine::render(int width, int height) {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // Test rendering - large colored rectangles across full screen
-    std::cout << "Drawing test rectangles..." << std::endl;
-    
-    glColor3f(1.0f, 0.0f, 0.0f); // Red
-    glBegin(GL_QUADS);
-    glVertex2f(0, 0);
-    glVertex2f(width/2, 0);
-    glVertex2f(width/2, height/2);
-    glVertex2f(0, height/2);
-    glEnd();
-    
-    glColor3f(0.0f, 1.0f, 0.0f); // Green  
-    glBegin(GL_QUADS);
-    glVertex2f(width/2, 0);
-    glVertex2f(width, 0);
-    glVertex2f(width, height/2);
-    glVertex2f(width/2, height/2);
-    glEnd();
-    
-    glColor3f(0.0f, 0.0f, 1.0f); // Blue
-    glBegin(GL_QUADS);
-    glVertex2f(0, height/2);
-    glVertex2f(width/2, height/2);
-    glVertex2f(width/2, height);
-    glVertex2f(0, height);
-    glEnd();
-    
-    glColor3f(1.0f, 1.0f, 0.0f); // Yellow
-    glBegin(GL_QUADS);
-    glVertex2f(width/2, height/2);
-    glVertex2f(width, height/2);
-    glVertex2f(width, height);
-    glVertex2f(width/2, height);
-    glEnd();
-    
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::cout << "OpenGL error during rendering: " << error << std::endl;
+    // Only render markdown content
+    if (markdownRenderer) {
+        Size viewportSize(width, height);
+        markdownRenderer->render(viewportSize);
     }
-
-    char statusText[256];
-    snprintf(statusText, sizeof(statusText), "Scroll: %.2f", scrollOffset);
-    renderText(statusText, 10, 70 + scrollOffset);
-
-    char inputText[1280];
-    snprintf(inputText, sizeof(inputText), "Input: %s", inputBuffer);
-    renderText(inputText, 10, 100 + scrollOffset);
-
-    renderText("WASD to move, scroll to scroll, type to input text", 10, 130 + scrollOffset);
-    renderText("ESC to quit", 10, 160 + scrollOffset);
 }
 
 void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
@@ -257,12 +219,8 @@ void Engine::handleScroll(double xoffset, double yoffset) {
 
 void Engine::handleMouse(int button, int action, int mods, double x, double y) {
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        char mouseText[64];
-        snprintf(mouseText, sizeof(mouseText), "Click: %.0f,%.0f", x, y);
-        if (inputLength + strlen(mouseText) < sizeof(inputBuffer) - 1) {
-            strcat(inputBuffer, mouseText);
-            inputLength += strlen(mouseText);
-        }
+        // TODO: Position cursor at click location
+        // For now, do nothing
     }
 }
 
@@ -441,6 +399,13 @@ void Engine::insertChar(char c) {
         inputBuffer[cursorPos] = c;
         inputLength++;
         cursorPos++;
+        
+        // Update markdown content
+        if (textBuffer && markdownRenderer) {
+            std::string newText(inputBuffer, inputLength);
+            textBuffer->setText(newText);
+            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+        }
     }
 }
 
@@ -449,5 +414,12 @@ void Engine::deleteChar() {
         memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
         inputLength--;
         cursorPos--;
+        
+        // Update markdown content
+        if (textBuffer && markdownRenderer) {
+            std::string newText(inputBuffer, inputLength);
+            textBuffer->setText(newText);
+            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+        }
     }
 }

@@ -16,6 +16,8 @@ private:
     void paintBackground(const LayoutObject* layoutObject, DisplayList& displayList);
     void paintBorder(const LayoutObject* layoutObject, DisplayList& displayList);
     
+    void resetTextPositioning();
+    
     Color getTextColor(const MarkdownObject* object);
     Color getBackgroundColor(const MarkdownObject* object);
 };

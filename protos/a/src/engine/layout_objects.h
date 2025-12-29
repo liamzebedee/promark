@@ -41,12 +41,17 @@ public:
     
     virtual Size computeIntrinsicSize() const;
     virtual void layout(const Size& availableSpace);
+    virtual float getFontSize() const;
     
-private:
+    void setParent(LayoutObject* parent);
+    LayoutObject* getParent() const;
+    
+protected:
     const MarkdownObject* sourceObject;
     LayoutFlow flow;
     Rect rect;
     std::vector<std::unique_ptr<LayoutObject>> children;
+    LayoutObject* parent;
 };
 
 class BlockLayoutObject : public LayoutObject {
@@ -75,6 +80,7 @@ public:
     };
     
     const std::vector<GlyphRun>& getGlyphRuns() const;
+    float getFontSize() const;
     
 private:
     std::vector<GlyphRun> glyphRuns;

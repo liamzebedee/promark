@@ -43,16 +43,18 @@ private:
 
 class DrawTextOp : public PaintOp {
 public:
-    DrawTextOp(const Point& position, const std::string& text, const Color& color);
+    DrawTextOp(const Point& position, const std::string& text, const Color& color, float fontSize = 16.0f);
     
     const Point& getPosition() const;
     const std::string& getText() const;
     const Color& getColor() const;
+    float getFontSize() const;
     
 private:
     Point position;
     std::string text;
     Color color;
+    float fontSize;
 };
 
 class DrawImageOp : public PaintOp {

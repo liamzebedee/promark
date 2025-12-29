@@ -1,4 +1,5 @@
 #include "painter.h"
+#include <iostream>
 
 Painter::Painter() {
 }
@@ -8,6 +9,9 @@ Painter::~Painter() {
 
 DisplayList Painter::paint(const LayoutObject* layoutRoot) {
     DisplayList displayList;
+    
+    // Reset static positioning for each paint cycle
+    resetTextPositioning();
     
     if (layoutRoot) {
         paintLayoutObject(layoutRoot, displayList);
@@ -38,15 +42,40 @@ void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& d
     }
 }
 
+// Static variable for text positioning
+static float nextY = 50;
+
+void Painter::resetTextPositioning() {
+    nextY = 50; // Reset to top
+}
+
 void Painter::paintText(const TextLayoutObject* textObject, DisplayList& displayList) {
-    // TODO: Paint text using glyph runs
     const Rect& rect = textObject->getRect();
     Color textColor = getTextColor(textObject->getSourceObject());
-    
-    // For now, paint a simple text representation
+    float fontSize = textObject->getFontSize();
     std::string text = textObject->getSourceObject()->getText();
-    auto textOp = std::make_unique<DrawTextOp>(rect.position, text, textColor);
+    
+    // Check if this text is inside a heading
+    bool isHeading = false;
+    if (textObject->getParent() && textObject->getParent()->getSourceObject()) {
+        isHeading = (textObject->getParent()->getSourceObject()->getType() == MarkdownObjectType::Heading);
+    }
+    
+    float yPos = nextY;
+    
+    if (isHeading) {
+        std::cout << "HEADING: " << text << " fontSize=" << fontSize << std::endl;
+    } else {
+        std::cout << "BODY: " << text << " fontSize=" << fontSize << std::endl;
+    }
+    
+    // Draw text at position
+    Point textPos(50, yPos);
+    auto textOp = std::make_unique<DrawTextOp>(textPos, text, textColor, fontSize);
     displayList.push_back(std::move(textOp));
+    
+    // Move down for next element
+    nextY += fontSize + 10;
 }
 
 void Painter::paintImage(const ImageLayoutObject* imageObject, DisplayList& displayList) {
@@ -75,7 +104,6 @@ void Painter::paintBorder(const LayoutObject* layoutObject, DisplayList& display
 }
 
 Color Painter::getTextColor(const MarkdownObject* object) {
-    // TODO: Get color based on object type and styling
     switch (object->getType()) {
         case MarkdownObjectType::Heading:
             return Color(0, 0, 0, 255); // Black

@@ -1,4 +1,6 @@
 #include "markdown_parser.h"
+#include <sstream>
+#include <iostream>
 
 MarkdownParser::MarkdownParser() {
 }
@@ -15,15 +17,49 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parse(const std::string& markdow
 }
 
 std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string& text) {
-    // TODO: Implement markdown parsing
     auto document = std::make_unique<MarkdownObject>(MarkdownObjectType::Document);
     
-    // For now, create a simple paragraph with the entire text
-    auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
-    auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-    textNode->setText(text);
-    paragraph->addChild(std::move(textNode));
-    document->addChild(std::move(paragraph));
+    std::string line;
+    std::istringstream stream(text);
+    
+    while (std::getline(stream, line)) {
+        
+        // Skip empty lines
+        if (line.empty()) {
+            continue;
+        }
+        
+        // Check if line is a heading
+        if (line[0] == '#') {
+            int level = 0;
+            size_t pos = 0;
+            while (pos < line.length() && line[pos] == '#') {
+                level++;
+                pos++;
+            }
+            
+            // Skip space after #
+            if (pos < line.length() && line[pos] == ' ') {
+                pos++;
+            }
+            
+            // Get heading text
+            std::string headingText = line.substr(pos);
+            
+            auto heading = std::make_unique<HeadingObject>(level);
+            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+            textNode->setText(headingText);
+            heading->addChild(std::move(textNode));
+            document->addChild(std::move(heading));
+        } else {
+            // Regular paragraph
+            auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
+            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+            textNode->setText(line);
+            paragraph->addChild(std::move(textNode));
+            document->addChild(std::move(paragraph));
+        }
+    }
     
     return document;
 }

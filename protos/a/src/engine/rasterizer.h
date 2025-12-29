@@ -2,6 +2,17 @@
 #include "paint_operations.h"
 #include <map>
 #include <vector>
+#include <ft2build.h>
+#include FT_FREETYPE_H
+
+struct Glyph {
+    unsigned int textureID;
+    int width;
+    int height;
+    int bearingX;
+    int bearingY;
+    int advance;
+};
 
 class Rasterizer {
 public:
@@ -9,6 +20,7 @@ public:
     ~Rasterizer();
     
     void rasterize(const DisplayList& displayList, const Rect& viewport);
+    bool initializeFont();
     
 private:
     void executeDrawRect(const DrawRectOp& op);
@@ -30,4 +42,14 @@ private:
     std::map<std::string, ImageData> imageCache;
     Rect currentClip;
     bool hasClip;
+    
+    // FreeType font system
+    FT_Library ft;
+    FT_Face face;
+    bool fontLoaded;
+    
+    // Font rendering
+    bool loadFont(const char* fontPath);
+    void renderChar(char c, float x, float y, const Color& color);
+    void renderText(const std::string& text, float x, float y, const Color& color);
 };

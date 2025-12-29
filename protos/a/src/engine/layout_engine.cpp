@@ -1,4 +1,5 @@
 #include "layout_engine.h"
+#include <iostream>
 
 LayoutEngine::LayoutEngine() {
 }
@@ -48,8 +49,10 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
         case MarkdownObjectType::ListItem:
             return std::make_unique<BlockLayoutObject>(object);
             
-        case MarkdownObjectType::Text:
-            return std::make_unique<TextLayoutObject>(object);
+        case MarkdownObjectType::Text: {
+            auto textLayout = std::make_unique<TextLayoutObject>(object);
+            return textLayout;
+        }
             
         case MarkdownObjectType::Image:
             return std::make_unique<ImageLayoutObject>(object);
