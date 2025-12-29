@@ -1,0 +1,70 @@
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Executables
+mdeditor
+/protos/a/mdeditor
+
+# Build directories
+build/
+dist/
+out/
+cmake-build-*/
+/protos/a/glfw-build/
+/protos/a/cmake/
+/protos/a/glfw-3.4/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Platform specific
+.vs/
+*.vcxproj.user
+*.suo
+*.user
+
+# Dependencies
+node_modules/
+vendor/
+
+# Logs
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+
+# Make
+Makefile.bak
+
+# Archive files
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# Documentation builds
+docs/_build/
+docs/html/
