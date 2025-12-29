@@ -19,7 +19,17 @@ LDFLAGS = -L$(GLFW_BUILD_DIR)/install/lib \
 	-framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 
 TARGET = $(BUILD_DIR)/mdeditor
-SOURCES = $(SRC_DIR)/main.cpp $(SRC_DIR)/engine/engine.cpp
+SOURCES = $(SRC_DIR)/main.cpp \
+	$(SRC_DIR)/engine/engine.cpp \
+	$(SRC_DIR)/engine/text_buffer.cpp \
+	$(SRC_DIR)/engine/markdown_objects.cpp \
+	$(SRC_DIR)/engine/markdown_parser.cpp \
+	$(SRC_DIR)/engine/layout_objects.cpp \
+	$(SRC_DIR)/engine/layout_engine.cpp \
+	$(SRC_DIR)/engine/paint_operations.cpp \
+	$(SRC_DIR)/engine/painter.cpp \
+	$(SRC_DIR)/engine/rasterizer.cpp \
+	$(SRC_DIR)/engine/markdown_renderer.cpp
 
 all: deps $(TARGET)
 
