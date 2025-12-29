@@ -8,20 +8,16 @@
 
 # Executables
 mdeditor
-/protos/a/mdeditor
+/protos/a/build/
 
 # Build directories
 build/
 dist/
 out/
 cmake-build-*/
-/protos/a/glfw-build/
-/protos/a/freetype-build/
-/protos/a/harfbuzz-build/
-/protos/a/cmake/
-/protos/a/glfw-3.4/
-/protos/a/freetype/
-/protos/a/harfbuzz/
+
+# Vendor dependencies
+/protos/a/vendor/
 
 # IDE and editor files
 .vscode/

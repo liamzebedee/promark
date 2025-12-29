@@ -3,8 +3,10 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <cstring>
+#include <algorithm>
 
-Engine::Engine() : scrollOffset(0.0f), inputLength(0), fontLoaded(false) {
+Engine::Engine() : scrollOffset(0.0f), inputLength(0), fontLoaded(false), 
+                   cursorPos(0), selectionStart(0), selectionEnd(0), hasSelection(false) {
     memset(inputBuffer, 0, sizeof(inputBuffer));
 }
 
@@ -140,41 +142,112 @@ void Engine::render(int width, int height) {
 }
 
 void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
-    std::cout << "Key event: key=" << key << ", scancode=" << scancode << ", action=" << action << ", mods=" << mods << std::endl;
-    
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
-        if (key == GLFW_KEY_ESCAPE) {
-            std::cout << "ESC pressed - closing window" << std::endl;
-            glfwSetWindowShouldClose(glfwGetCurrentContext(), GLFW_TRUE);
-        } else if (key == GLFW_KEY_BACKSPACE && inputLength > 0) {
-            std::cout << "Backspace pressed - removing character" << std::endl;
-            inputBuffer[--inputLength] = '\0';
-        } else if (key == GLFW_KEY_ENTER && inputLength < sizeof(inputBuffer) - 1) {
-            std::cout << "Enter pressed - adding newline" << std::endl;
-            inputBuffer[inputLength++] = '\n';
-            inputBuffer[inputLength] = '\0';
-        } else if (key == GLFW_KEY_SPACE && inputLength < sizeof(inputBuffer) - 1) {
-            std::cout << "Space pressed - adding space" << std::endl;
-            inputBuffer[inputLength++] = ' ';
-            inputBuffer[inputLength] = '\0';
-        } else if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z && inputLength < sizeof(inputBuffer) - 1) {
-            char ch = 'a' + (key - GLFW_KEY_A);
-            if (mods & GLFW_MOD_SHIFT) {
-                ch = 'A' + (key - GLFW_KEY_A);
-            }
-            std::cout << "Letter pressed: " << ch << std::endl;
-            inputBuffer[inputLength++] = ch;
-            inputBuffer[inputLength] = '\0';
-        } else if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9 && inputLength < sizeof(inputBuffer) - 1) {
-            char digit = '0' + (key - GLFW_KEY_0);
-            std::cout << "Number pressed: " << digit << std::endl;
-            inputBuffer[inputLength++] = digit;
-            inputBuffer[inputLength] = '\0';
-        } else {
-            std::cout << "Unhandled key: " << key << std::endl;
-        }
+        bool shift = mods & GLFW_MOD_SHIFT;
+        bool alt = mods & GLFW_MOD_ALT;
         
-        std::cout << "Input buffer now: '" << inputBuffer << "' (length: " << inputLength << ")" << std::endl;
+        if (key == GLFW_KEY_ESCAPE) {
+            glfwSetWindowShouldClose(glfwGetCurrentContext(), GLFW_TRUE);
+            
+        } else if (key == GLFW_KEY_LEFT) {
+            if (alt) {
+                moveCursorByWord(-1, shift);
+            } else {
+                moveCursor(-1, shift);
+            }
+            
+        } else if (key == GLFW_KEY_RIGHT) {
+            if (alt) {
+                moveCursorByWord(1, shift);
+            } else {
+                moveCursor(1, shift);
+            }
+            
+        } else if (key == GLFW_KEY_BACKSPACE) {
+            if (hasSelection) {
+                // Delete selection
+                int start = std::min(selectionStart, selectionEnd);
+                int end = std::max(selectionStart, selectionEnd);
+                memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
+                inputLength -= (end - start);
+                cursorPos = start;
+                hasSelection = false;
+            } else if (cursorPos > 0) {
+                deleteChar();
+            }
+            
+        } else if (key == GLFW_KEY_DELETE) {
+            if (hasSelection) {
+                // Delete selection
+                int start = std::min(selectionStart, selectionEnd);
+                int end = std::max(selectionStart, selectionEnd);
+                memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
+                inputLength -= (end - start);
+                cursorPos = start;
+                hasSelection = false;
+            } else if (cursorPos < inputLength) {
+                memmove(inputBuffer + cursorPos, inputBuffer + cursorPos + 1, inputLength - cursorPos);
+                inputLength--;
+                inputBuffer[inputLength] = '\0';
+            }
+            
+        } else if (key == GLFW_KEY_HOME) {
+            cursorPos = 0;
+            if (!shift) hasSelection = false;
+            else {
+                if (!hasSelection) selectionStart = cursorPos;
+                selectionEnd = cursorPos;
+                hasSelection = true;
+            }
+            
+        } else if (key == GLFW_KEY_END) {
+            cursorPos = inputLength;
+            if (!shift) hasSelection = false;
+            else {
+                if (!hasSelection) selectionStart = cursorPos;
+                selectionEnd = cursorPos;
+                hasSelection = true;
+            }
+            
+        } else if (key == GLFW_KEY_ENTER) {
+            insertChar('\n');
+            
+        } else if (key == GLFW_KEY_SPACE) {
+            insertChar(' ');
+            
+        } else if (key >= GLFW_KEY_A && key <= GLFW_KEY_Z) {
+            char ch = shift ? ('A' + (key - GLFW_KEY_A)) : ('a' + (key - GLFW_KEY_A));
+            insertChar(ch);
+            
+        } else if (key >= GLFW_KEY_0 && key <= GLFW_KEY_9) {
+            char ch;
+            if (shift) {
+                const char* shiftChars = ")!@#$%^&*(";
+                ch = shiftChars[key - GLFW_KEY_0];
+            } else {
+                ch = '0' + (key - GLFW_KEY_0);
+            }
+            insertChar(ch);
+            
+        } else {
+            // Handle special characters
+            char ch = 0;
+            if (key == GLFW_KEY_SEMICOLON) ch = shift ? ':' : ';';
+            else if (key == GLFW_KEY_APOSTROPHE) ch = shift ? '"' : '\'';
+            else if (key == GLFW_KEY_COMMA) ch = shift ? '<' : ',';
+            else if (key == GLFW_KEY_PERIOD) ch = shift ? '>' : '.';
+            else if (key == GLFW_KEY_SLASH) ch = shift ? '?' : '/';
+            else if (key == GLFW_KEY_GRAVE_ACCENT) ch = shift ? '~' : '`';
+            else if (key == GLFW_KEY_LEFT_BRACKET) ch = shift ? '{' : '[';
+            else if (key == GLFW_KEY_RIGHT_BRACKET) ch = shift ? '}' : ']';
+            else if (key == GLFW_KEY_BACKSLASH) ch = shift ? '|' : '\\';
+            else if (key == GLFW_KEY_MINUS) ch = shift ? '_' : '-';
+            else if (key == GLFW_KEY_EQUAL) ch = shift ? '+' : '=';
+            
+            if (ch != 0) {
+                insertChar(ch);
+            }
+        }
     }
 }
 
@@ -303,5 +376,78 @@ void Engine::renderText(const char* text, float x, float y) {
             renderChar(*p, currentX, currentY);
             currentX += glyphs[*p].advance;
         }
+    }
+}
+
+void Engine::moveCursor(int delta, bool extendSelection) {
+    int newPos = cursorPos + delta;
+    newPos = std::max(0, std::min(newPos, inputLength));
+    
+    if (extendSelection) {
+        if (!hasSelection) {
+            selectionStart = cursorPos;
+            hasSelection = true;
+        }
+        selectionEnd = newPos;
+    } else {
+        hasSelection = false;
+    }
+    
+    cursorPos = newPos;
+}
+
+void Engine::moveCursorByWord(int direction, bool extendSelection) {
+    int newPos = findWordBoundary(cursorPos, direction);
+    
+    if (extendSelection) {
+        if (!hasSelection) {
+            selectionStart = cursorPos;
+            hasSelection = true;
+        }
+        selectionEnd = newPos;
+    } else {
+        hasSelection = false;
+    }
+    
+    cursorPos = newPos;
+}
+
+int Engine::findWordBoundary(int pos, int direction) {
+    if (direction > 0) {
+        // Move forward to next word
+        while (pos < inputLength && inputBuffer[pos] != ' ' && inputBuffer[pos] != '\n') pos++;
+        while (pos < inputLength && (inputBuffer[pos] == ' ' || inputBuffer[pos] == '\n')) pos++;
+    } else {
+        // Move backward to previous word
+        while (pos > 0 && (inputBuffer[pos-1] == ' ' || inputBuffer[pos-1] == '\n')) pos--;
+        while (pos > 0 && inputBuffer[pos-1] != ' ' && inputBuffer[pos-1] != '\n') pos--;
+    }
+    return pos;
+}
+
+void Engine::insertChar(char c) {
+    if (hasSelection) {
+        // Replace selection
+        int start = std::min(selectionStart, selectionEnd);
+        int end = std::max(selectionStart, selectionEnd);
+        memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
+        inputLength -= (end - start);
+        cursorPos = start;
+        hasSelection = false;
+    }
+    
+    if (inputLength < sizeof(inputBuffer) - 1) {
+        memmove(inputBuffer + cursorPos + 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+        inputBuffer[cursorPos] = c;
+        inputLength++;
+        cursorPos++;
+    }
+}
+
+void Engine::deleteChar() {
+    if (cursorPos > 0) {
+        memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+        inputLength--;
+        cursorPos--;
     }
 }

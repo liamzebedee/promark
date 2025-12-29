@@ -20,6 +20,12 @@ private:
     char inputBuffer[1024];
     int inputLength;
     
+    // Text editing state
+    int cursorPos;
+    int selectionStart;
+    int selectionEnd;
+    bool hasSelection;
+    
     // FreeType font system
     FT_Library ft;
     FT_Face face;
@@ -38,7 +44,16 @@ private:
     
     void renderText(const char* text, float x, float y);
     void renderChar(char c, float x, float y);
+    void renderCursor(float x, float y);
+    void renderSelection(const char* text, float x, float y);
     bool initFreeType();
     bool loadFont(const char* fontPath);
     void loadGlyph(char c);
+    
+    // Text navigation helpers
+    void moveCursor(int delta, bool extendSelection);
+    void moveCursorByWord(int direction, bool extendSelection);
+    int findWordBoundary(int pos, int direction);
+    void insertChar(char c);
+    void deleteChar();
 };

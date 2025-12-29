@@ -3,13 +3,14 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GLFW_SOURCE_DIR="$SCRIPT_DIR/glfw-3.4"
-GLFW_BUILD_DIR="$SCRIPT_DIR/glfw-build"
-FREETYPE_SOURCE_DIR="$SCRIPT_DIR/freetype"
-FREETYPE_BUILD_DIR="$SCRIPT_DIR/freetype-build"
-HARFBUZZ_SOURCE_DIR="$SCRIPT_DIR/harfbuzz"
-HARFBUZZ_BUILD_DIR="$SCRIPT_DIR/harfbuzz-build"
-CMAKE_DIR="$SCRIPT_DIR/cmake"
+VENDOR_DIR="$SCRIPT_DIR/vendor"
+GLFW_SOURCE_DIR="$VENDOR_DIR/glfw-3.4"
+GLFW_BUILD_DIR="$VENDOR_DIR/glfw-build"
+FREETYPE_SOURCE_DIR="$VENDOR_DIR/freetype"
+FREETYPE_BUILD_DIR="$VENDOR_DIR/freetype-build"
+HARFBUZZ_SOURCE_DIR="$VENDOR_DIR/harfbuzz"
+HARFBUZZ_BUILD_DIR="$VENDOR_DIR/harfbuzz-build"
+CMAKE_DIR="$VENDOR_DIR/cmake"
 CMAKE_BIN="$CMAKE_DIR/CMake.app/Contents/bin/cmake"
 
 echo "Setting up text rendering dependencies..."
