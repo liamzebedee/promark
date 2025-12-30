@@ -15,7 +15,8 @@ enum class PaintOpType {
     DrawText,
     DrawImage,
     SetClip,
-    RestoreClip
+    RestoreClip,
+    DrawDebugBorder
 };
 
 class PaintOp {
@@ -82,6 +83,18 @@ private:
 class RestoreClipOp : public PaintOp {
 public:
     RestoreClipOp();
+};
+
+class DrawDebugBorderOp : public PaintOp {
+public:
+    DrawDebugBorderOp(const Rect& rect, const Color& color);
+    
+    const Rect& getRect() const;
+    const Color& getColor() const;
+    
+private:
+    Rect rect;
+    Color color;
 };
 
 using DisplayList = std::vector<std::unique_ptr<PaintOp>>;

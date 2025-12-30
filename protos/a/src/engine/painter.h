@@ -1,6 +1,7 @@
 #pragma once
 #include "paint_operations.h"
 #include "layout_objects.h"
+#include <cstdlib>
 
 class Painter {
 public:
@@ -15,6 +16,7 @@ private:
     void paintImage(const ImageLayoutObject* imageObject, DisplayList& displayList);
     void paintBackground(const LayoutObject* layoutObject, DisplayList& displayList);
     void paintBorder(const LayoutObject* layoutObject, DisplayList& displayList);
+    void paintDebugBorder(const LayoutObject* layoutObject, DisplayList& displayList);
     
     void resetTextPositioning();
     

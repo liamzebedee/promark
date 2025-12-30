@@ -15,4 +15,5 @@ private:
     std::unique_ptr<LayoutObject> createLayoutObject(const MarkdownObject* object);
     void layoutBlockFlow(LayoutObject* layoutObject, const Size& availableSpace);
     void layoutInlineFlow(LayoutObject* layoutObject, const Size& availableSpace);
+    void propagatePositionToChildren(LayoutObject* parent, float parentX, float parentY);
 };

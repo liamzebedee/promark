@@ -1,5 +1,6 @@
 #include "painter.h"
 #include <iostream>
+#include <string>
 
 Painter::Painter() {
 }
@@ -36,17 +37,20 @@ void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& d
     // Paint border
     paintBorder(layoutObject, displayList);
     
+    // Debug: Paint layout rect borders if DEBUG=1
+    const char* debugEnv = std::getenv("DEBUG");
+    if (debugEnv && std::string(debugEnv) == "1") {
+        paintDebugBorder(layoutObject, displayList);
+    }
+    
     // Paint children
     for (const auto& child : layoutObject->getChildren()) {
         paintLayoutObject(child.get(), displayList);
     }
 }
 
-// Static variable for text positioning
-static float nextY = 50;
-
 void Painter::resetTextPositioning() {
-    nextY = 50; // Reset to top
+    // No longer needed - using layout rects
 }
 
 void Painter::paintText(const TextLayoutObject* textObject, DisplayList& displayList) {
@@ -54,28 +58,12 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
     Color textColor = getTextColor(textObject->getSourceObject());
     float fontSize = textObject->getFontSize();
     std::string text = textObject->getSourceObject()->getText();
-    
-    // Check if this text is inside a heading
-    bool isHeading = false;
-    if (textObject->getParent() && textObject->getParent()->getSourceObject()) {
-        isHeading = (textObject->getParent()->getSourceObject()->getType() == MarkdownObjectType::Heading);
-    }
-    
-    float yPos = nextY;
-    
-    if (isHeading) {
-        std::cout << "HEADING: " << text << " fontSize=" << fontSize << std::endl;
-    } else {
-        std::cout << "BODY: " << text << " fontSize=" << fontSize << std::endl;
-    }
-    
-    // Draw text at position
-    Point textPos(50, yPos);
+
+    // Use position from layout rect
+    // Text baseline offset: move down by fontSize since rect.y is top of text box
+    Point textPos(rect.position.x, rect.position.y + fontSize);
     auto textOp = std::make_unique<DrawTextOp>(textPos, text, textColor, fontSize);
     displayList.push_back(std::move(textOp));
-    
-    // Move down for next element
-    nextY += fontSize + 10;
 }
 
 void Painter::paintImage(const ImageLayoutObject* imageObject, DisplayList& displayList) {
@@ -124,4 +112,15 @@ Color Painter::getBackgroundColor(const MarkdownObject* object) {
         default:
             return Color(0, 0, 0, 0); // Transparent
     }
+}
+
+void Painter::paintDebugBorder(const LayoutObject* layoutObject, DisplayList& displayList) {
+    const Rect& rect = layoutObject->getRect();
+    
+    // Use BRIGHT MAGENTA so it's very visible
+    Color debugColor = Color(255, 0, 255, 255); // Bright magenta, fully opaque
+    
+    // Create debug border rect (we'll draw it as an outline in the rasterizer)
+    auto debugOp = std::make_unique<DrawDebugBorderOp>(rect, debugColor);
+    displayList.push_back(std::move(debugOp));
 }

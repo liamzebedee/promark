@@ -52,6 +52,9 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport)
             case PaintOpType::RestoreClip:
                 executeRestoreClip(static_cast<const RestoreClipOp&>(*op));
                 break;
+            case PaintOpType::DrawDebugBorder:
+                executeDrawDebugBorder(static_cast<const DrawDebugBorderOp&>(*op));
+                break;
         }
     }
 }
@@ -278,4 +281,20 @@ void Rasterizer::renderText(const std::string& text, float x, float y, const Col
             currentX += face->glyph->advance.x >> 6;
         }
     }
+}
+
+void Rasterizer::executeDrawDebugBorder(const DrawDebugBorderOp& op) {
+    const Rect& rect = op.getRect();
+    const Color& color = op.getColor();
+    
+    // Make debug borders very thick and visible
+    glLineWidth(3.0f);
+    glColor4ub(color.r, color.g, color.b, color.a);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(rect.position.x, rect.position.y);
+    glVertex2f(rect.position.x + rect.size.width, rect.position.y);
+    glVertex2f(rect.position.x + rect.size.width, rect.position.y + rect.size.height);
+    glVertex2f(rect.position.x, rect.position.y + rect.size.height);
+    glEnd();
+    glLineWidth(1.0f); // Reset line width
 }

@@ -64,3 +64,15 @@ const Rect& SetClipOp::getClipRect() const {
 
 RestoreClipOp::RestoreClipOp() : PaintOp(PaintOpType::RestoreClip) {
 }
+
+DrawDebugBorderOp::DrawDebugBorderOp(const Rect& rect, const Color& color) 
+    : PaintOp(PaintOpType::DrawDebugBorder), rect(rect), color(color) {
+}
+
+const Rect& DrawDebugBorderOp::getRect() const {
+    return rect;
+}
+
+const Color& DrawDebugBorderOp::getColor() const {
+    return color;
+}
