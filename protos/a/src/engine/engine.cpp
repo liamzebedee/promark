@@ -13,8 +13,8 @@ Engine::Engine() : scrollOffset(0.0f), inputLength(0), fontLoaded(false),
     markdownRenderer = std::make_unique<MarkdownRenderer>();
     textBuffer = std::make_unique<TextBuffer>();
     
-    // Set up initial markdown content
-    std::string initialContent = "# Welcome to Markdown Editor\n\nThis is a paragraph of body text that should appear smaller than the heading above.";
+    // Set up initial markdown content - includes a 64x64 red square PNG test image
+    std::string initialContent = "# Welcome to Markdown Editor\n\nThis is a paragraph of body text.\n\n![red square](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeUlEQVR4nO3PQQkAMAzAwGqqfykTMxF7HINABFzm7H7dcEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFj10YCQEtRI8KmQAAAABJRU5ErkJggg==)\n\nMore text after the image.";
     
     // Copy to input buffer for editing
     strncpy(inputBuffer, initialContent.c_str(), sizeof(inputBuffer) - 1);

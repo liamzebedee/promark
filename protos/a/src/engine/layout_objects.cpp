@@ -1,4 +1,5 @@
 #include "layout_objects.h"
+#include <jpeglib.h>
 
 LayoutObject::LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow) 
     : sourceObject(sourceObject), flow(flow), parent(nullptr) {
@@ -237,8 +238,89 @@ void ImageLayoutObject::layout(const Size& availableSpace) {
     setRect(Rect(0, 0, size.width, size.height));
 }
 
+// Helper to decode base64
+static bool decodeBase64(const std::string& base64, std::vector<uint8_t>& outBytes) {
+    static const std::string base64Chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    std::vector<int> lookup(256, -1);
+    for (int i = 0; i < 64; i++) {
+        lookup[static_cast<unsigned char>(base64Chars[i])] = i;
+    }
+
+    outBytes.clear();
+    outBytes.reserve(base64.size() * 3 / 4);
+
+    uint32_t buffer = 0;
+    int bitsCollected = 0;
+
+    for (char c : base64) {
+        if (c == '=' || c == '\n' || c == '\r' || c == ' ') continue;
+        int value = lookup[static_cast<unsigned char>(c)];
+        if (value < 0) continue;
+
+        buffer = (buffer << 6) | value;
+        bitsCollected += 6;
+
+        if (bitsCollected >= 8) {
+            bitsCollected -= 8;
+            outBytes.push_back(static_cast<uint8_t>((buffer >> bitsCollected) & 0xFF));
+        }
+    }
+    return true;
+}
+
 void ImageLayoutObject::computeImageSize() const {
-    // Placeholder - actual image decoding not yet implemented
+    const ImageObject* imgObj = static_cast<const ImageObject*>(sourceObject);
+    const std::string& src = imgObj->getSrc();
+
+    // Default size
     intrinsicSize = Size(200, 150);
     sizeComputed = true;
+
+    // Check for data URI
+    if (src.substr(0, 5) != "data:") {
+        return;
+    }
+
+    size_t commaPos = src.find(',');
+    if (commaPos == std::string::npos) return;
+
+    std::string header = src.substr(0, commaPos);
+    std::string base64Data = src.substr(commaPos + 1);
+
+    if (header.find(";base64") == std::string::npos) return;
+
+    std::vector<uint8_t> imageBytes;
+    if (!decodeBase64(base64Data, imageBytes)) return;
+
+    // Try to get dimensions from PNG header
+    if (header.find("image/png") != std::string::npos) {
+        if (imageBytes.size() >= 24 &&
+            imageBytes[0] == 137 && imageBytes[1] == 80 &&
+            imageBytes[2] == 78 && imageBytes[3] == 71) {
+            // IHDR chunk at offset 8
+            uint32_t width = (imageBytes[16] << 24) | (imageBytes[17] << 16) |
+                            (imageBytes[18] << 8) | imageBytes[19];
+            uint32_t height = (imageBytes[20] << 24) | (imageBytes[21] << 16) |
+                             (imageBytes[22] << 8) | imageBytes[23];
+            intrinsicSize = Size(static_cast<float>(width), static_cast<float>(height));
+        }
+    }
+    // Try to get dimensions from JPEG header
+    else if (header.find("image/jpeg") != std::string::npos ||
+             header.find("image/jpg") != std::string::npos) {
+        struct jpeg_decompress_struct cinfo;
+        struct jpeg_error_mgr jerr;
+
+        cinfo.err = jpeg_std_error(&jerr);
+        jpeg_create_decompress(&cinfo);
+        jpeg_mem_src(&cinfo, imageBytes.data(), imageBytes.size());
+
+        if (jpeg_read_header(&cinfo, TRUE) == JPEG_HEADER_OK) {
+            intrinsicSize = Size(static_cast<float>(cinfo.image_width),
+                                 static_cast<float>(cinfo.image_height));
+        }
+        jpeg_destroy_decompress(&cinfo);
+    }
 }

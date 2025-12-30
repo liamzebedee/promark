@@ -4,6 +4,7 @@
 #include <vector>
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include <jpeglib.h>
 
 struct Glyph {
     unsigned int textureID;
@@ -18,11 +19,17 @@ class Rasterizer {
 public:
     Rasterizer();
     ~Rasterizer();
-    
+
     void rasterize(const DisplayList& displayList, const Rect& viewport);
     bool initializeFont();
-    
+
 private:
+    struct ImageData {
+        uint32_t width, height;
+        std::vector<uint8_t> pixels;
+        uint32_t textureId;
+    };
+
     void executeDrawRect(const DrawRectOp& op);
     void executeDrawText(const DrawTextOp& op);
     void executeDrawImage(const DrawImageOp& op);
@@ -31,17 +38,15 @@ private:
     void executeDrawDebugBorder(const DrawDebugBorderOp& op);
     void executeDrawCaret(const DrawCaretOp& op);
     void executeDrawSelectionRect(const DrawSelectionRectOp& op);
-    
+
     void loadImage(const std::string& imagePath);
     void decodeJpeg(const std::string& filePath);
     void decodePng(const std::string& filePath);
-    
-    struct ImageData {
-        uint32_t width, height;
-        std::vector<uint8_t> pixels;
-        uint32_t textureId;
-    };
-    
+    bool loadFromDataURI(const std::string& dataUri, ImageData& outData);
+    bool decodeBase64(const std::string& base64, std::vector<uint8_t>& outBytes);
+    bool decodePngFromMemory(const uint8_t* data, size_t length, ImageData& outData);
+    bool decodeJpegFromMemory(const uint8_t* data, size_t length, ImageData& outData);
+
     std::map<std::string, ImageData> imageCache;
     Rect currentClip;
     bool hasClip;

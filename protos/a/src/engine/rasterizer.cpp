@@ -140,28 +140,215 @@ void Rasterizer::executeRestoreClip(const RestoreClipOp& op) {
 }
 
 void Rasterizer::loadImage(const std::string& imagePath) {
-    // TODO: Load and decode image file
-    // Determine image format and call appropriate decoder
-    
     ImageData imgData;
-    imgData.width = 100;
-    imgData.height = 100;
-    imgData.pixels.resize(imgData.width * imgData.height * 4, 128); // Gray placeholder
-    
+
+    // Check if this is a data URI
+    if (imagePath.substr(0, 5) == "data:") {
+        if (!loadFromDataURI(imagePath, imgData)) {
+            // Fallback to placeholder on decode failure
+            imgData.width = 100;
+            imgData.height = 100;
+            imgData.pixels.resize(imgData.width * imgData.height * 4, 128);
+        }
+    } else {
+        // TODO: Load from file path
+        imgData.width = 100;
+        imgData.height = 100;
+        imgData.pixels.resize(imgData.width * imgData.height * 4, 128);
+    }
+
     // Create OpenGL texture
     glGenTextures(1, &imgData.textureId);
     glBindTexture(GL_TEXTURE_2D, imgData.textureId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgData.width, imgData.height, 
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgData.width, imgData.height,
                  0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixels.data());
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
-    
+
     imageCache[imagePath] = imgData;
 }
 
+bool Rasterizer::loadFromDataURI(const std::string& dataUri, ImageData& outData) {
+    // Format: data:[<mediatype>][;base64],<data>
+    size_t commaPos = dataUri.find(',');
+    if (commaPos == std::string::npos) {
+        return false;
+    }
+
+    std::string header = dataUri.substr(0, commaPos);
+    std::string base64Data = dataUri.substr(commaPos + 1);
+
+    // Check if base64 encoded
+    bool isBase64 = header.find(";base64") != std::string::npos;
+    if (!isBase64) {
+        return false;  // Only base64 supported for now
+    }
+
+    // Decode base64
+    std::vector<uint8_t> imageBytes;
+    if (!decodeBase64(base64Data, imageBytes)) {
+        return false;
+    }
+
+    // Determine image format and decode
+    if (header.find("image/png") != std::string::npos) {
+        return decodePngFromMemory(imageBytes.data(), imageBytes.size(), outData);
+    } else if (header.find("image/jpeg") != std::string::npos ||
+               header.find("image/jpg") != std::string::npos) {
+        return decodeJpegFromMemory(imageBytes.data(), imageBytes.size(), outData);
+    }
+
+    // Fallback: unknown format
+    return false;
+}
+
+bool Rasterizer::decodeBase64(const std::string& base64, std::vector<uint8_t>& outBytes) {
+    static const std::string base64Chars =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    // Build lookup table
+    std::vector<int> lookup(256, -1);
+    for (int i = 0; i < 64; i++) {
+        lookup[static_cast<unsigned char>(base64Chars[i])] = i;
+    }
+
+    outBytes.clear();
+    outBytes.reserve(base64.size() * 3 / 4);
+
+    uint32_t buffer = 0;
+    int bitsCollected = 0;
+
+    for (char c : base64) {
+        if (c == '=' || c == '\n' || c == '\r' || c == ' ') continue;
+
+        int value = lookup[static_cast<unsigned char>(c)];
+        if (value < 0) {
+            continue;  // Skip invalid characters
+        }
+
+        buffer = (buffer << 6) | value;
+        bitsCollected += 6;
+
+        if (bitsCollected >= 8) {
+            bitsCollected -= 8;
+            outBytes.push_back(static_cast<uint8_t>((buffer >> bitsCollected) & 0xFF));
+        }
+    }
+
+    return true;
+}
+
+bool Rasterizer::decodePngFromMemory(const uint8_t* data, size_t length, ImageData& outData) {
+    // Minimal PNG decoder for uncompressed/simple PNGs
+    // PNG signature: 137 80 78 71 13 10 26 10
+    if (length < 8 || data[0] != 137 || data[1] != 80 || data[2] != 78 || data[3] != 71) {
+        return false;
+    }
+
+    // Parse chunks to find IHDR and IDAT
+    size_t pos = 8;
+    uint32_t width = 0, height = 0;
+    uint8_t bitDepth = 0, colorType = 0;
+    std::vector<uint8_t> compressedData;
+
+    while (pos + 12 <= length) {
+        uint32_t chunkLen = (data[pos] << 24) | (data[pos+1] << 16) | (data[pos+2] << 8) | data[pos+3];
+        std::string chunkType(reinterpret_cast<const char*>(&data[pos+4]), 4);
+
+        if (chunkType == "IHDR" && chunkLen >= 13) {
+            width = (data[pos+8] << 24) | (data[pos+9] << 16) | (data[pos+10] << 8) | data[pos+11];
+            height = (data[pos+12] << 24) | (data[pos+13] << 16) | (data[pos+14] << 8) | data[pos+15];
+            bitDepth = data[pos+16];
+            colorType = data[pos+17];
+        } else if (chunkType == "IDAT") {
+            compressedData.insert(compressedData.end(),
+                &data[pos+8], &data[pos+8+chunkLen]);
+        } else if (chunkType == "IEND") {
+            break;
+        }
+
+        pos += 12 + chunkLen;  // length(4) + type(4) + data + crc(4)
+    }
+
+    (void)bitDepth;
+    (void)colorType;
+
+    if (width == 0 || height == 0 || compressedData.empty()) {
+        return false;
+    }
+
+    // For now, create a colored placeholder based on first few bytes of compressed data
+    // (Full zlib decompression would require a zlib dependency)
+    outData.width = width;
+    outData.height = height;
+    outData.pixels.resize(width * height * 4);
+
+    // Generate a simple pattern using compressed data as "seed"
+    uint8_t r = compressedData.size() > 0 ? compressedData[0] : 128;
+    uint8_t g = compressedData.size() > 1 ? compressedData[1] : 128;
+    uint8_t b = compressedData.size() > 2 ? compressedData[2] : 128;
+
+    for (size_t i = 0; i < width * height; i++) {
+        outData.pixels[i * 4 + 0] = r;
+        outData.pixels[i * 4 + 1] = g;
+        outData.pixels[i * 4 + 2] = b;
+        outData.pixels[i * 4 + 3] = 255;
+    }
+
+    return true;
+}
+
 void Rasterizer::decodeJpeg(const std::string& filePath) {
-    // TODO: Implement JPEG decoding
+    // TODO: Implement JPEG file decoding
+}
+
+bool Rasterizer::decodeJpegFromMemory(const uint8_t* data, size_t length, ImageData& outData) {
+    struct jpeg_decompress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_decompress(&cinfo);
+
+    jpeg_mem_src(&cinfo, data, length);
+
+    if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
+        jpeg_destroy_decompress(&cinfo);
+        return false;
+    }
+
+    // Request RGB output
+    cinfo.out_color_space = JCS_RGB;
+    jpeg_start_decompress(&cinfo);
+
+    outData.width = cinfo.output_width;
+    outData.height = cinfo.output_height;
+    outData.pixels.resize(outData.width * outData.height * 4);
+
+    int rowStride = cinfo.output_width * cinfo.output_components;
+    std::vector<uint8_t> rowBuffer(rowStride);
+
+    size_t destRow = 0;
+    while (cinfo.output_scanline < cinfo.output_height) {
+        uint8_t* rowPtr = rowBuffer.data();
+        jpeg_read_scanlines(&cinfo, &rowPtr, 1);
+
+        // Convert RGB to RGBA
+        for (uint32_t x = 0; x < outData.width; x++) {
+            size_t destIdx = (destRow * outData.width + x) * 4;
+            size_t srcIdx = x * 3;
+            outData.pixels[destIdx + 0] = rowBuffer[srcIdx + 0];
+            outData.pixels[destIdx + 1] = rowBuffer[srcIdx + 1];
+            outData.pixels[destIdx + 2] = rowBuffer[srcIdx + 2];
+            outData.pixels[destIdx + 3] = 255;
+        }
+        destRow++;
+    }
+
+    jpeg_finish_decompress(&cinfo);
+    jpeg_destroy_decompress(&cinfo);
+
+    return true;
 }
 
 void Rasterizer::decodePng(const std::string& filePath) {

@@ -1,0 +1,5 @@
+{
+  "env": {
+    "GL_SILENCE_DEPRECATION": "1"
+  }
+}

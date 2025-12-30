@@ -79,6 +79,34 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string&
 
             heading->addChild(std::move(textNode));
             document->addChild(std::move(heading));
+        } else if (line.length() >= 4 && line[0] == '!' && line[1] == '[') {
+            // Check for image syntax: ![alt](src)
+            size_t altEnd = line.find(']', 2);
+            if (altEnd != std::string::npos && altEnd + 1 < line.length() && line[altEnd + 1] == '(') {
+                size_t srcEnd = line.find(')', altEnd + 2);
+                if (srcEnd != std::string::npos) {
+                    // Extract alt text and source
+                    std::string altText = line.substr(2, altEnd - 2);
+                    std::string src = line.substr(altEnd + 2, srcEnd - altEnd - 2);
+
+                    auto image = std::make_unique<ImageObject>(src, altText);
+                    image->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+                    document->addChild(std::move(image));
+                    pos = nextLineStart;
+                    continue;
+                }
+            }
+            // If image syntax is incomplete, treat as regular paragraph
+            auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
+            paragraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+
+            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+            textNode->setText(line);
+            textNode->setRawRange(static_cast<int>(lineStart), static_cast<int>(lineEnd));
+            textNode->setTextOffset(0);
+
+            paragraph->addChild(std::move(textNode));
+            document->addChild(std::move(paragraph));
         } else {
             // Regular paragraph - no syntax stripping
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
