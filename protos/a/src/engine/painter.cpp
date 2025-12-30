@@ -1,6 +1,7 @@
 #include "painter.h"
-#include <iostream>
-#include <string>
+#include "markdown_renderer.h"  // For CaretState
+#include <cstring>
+#include <algorithm>
 
 Painter::Painter() {
 }
@@ -8,49 +9,48 @@ Painter::Painter() {
 Painter::~Painter() {
 }
 
-DisplayList Painter::paint(const LayoutObject* layoutRoot) {
+DisplayList Painter::paint(const LayoutObject* layoutRoot, const CaretState* caret,
+                           const char* text, int textLength) {
     DisplayList displayList;
-    
-    // Reset static positioning for each paint cycle
-    resetTextPositioning();
-    
+
+    // Paint selection first (behind text)
+    if (caret && caret->hasSelection && text) {
+        paintSelection(displayList, *caret, text, textLength, layoutRoot);
+    }
+
+    // Paint layout tree
     if (layoutRoot) {
         paintLayoutObject(layoutRoot, displayList);
     }
-    
+
+    // Paint caret last (on top)
+    if (caret && text) {
+        paintCaret(displayList, *caret, text, textLength, layoutRoot);
+    }
+
     return displayList;
 }
 
 void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& displayList) {
-    // Paint background
     paintBackground(layoutObject, displayList);
-    
-    // Paint based on object type
-    const MarkdownObject* sourceObject = layoutObject->getSourceObject();
-    
+
     if (const TextLayoutObject* textObject = dynamic_cast<const TextLayoutObject*>(layoutObject)) {
         paintText(textObject, displayList);
     } else if (const ImageLayoutObject* imageObject = dynamic_cast<const ImageLayoutObject*>(layoutObject)) {
         paintImage(imageObject, displayList);
     }
-    
-    // Paint border
+
     paintBorder(layoutObject, displayList);
-    
-    // Debug: Paint layout rect borders if DEBUG=1
+
+    // Debug borders when DEBUG=1
     const char* debugEnv = std::getenv("DEBUG");
-    if (debugEnv && std::string(debugEnv) == "1") {
+    if (debugEnv && strcmp(debugEnv, "1") == 0) {
         paintDebugBorder(layoutObject, displayList);
     }
-    
-    // Paint children
+
     for (const auto& child : layoutObject->getChildren()) {
         paintLayoutObject(child.get(), displayList);
     }
-}
-
-void Painter::resetTextPositioning() {
-    // No longer needed - using layout rects
 }
 
 void Painter::paintText(const TextLayoutObject* textObject, DisplayList& displayList) {
@@ -67,19 +67,14 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
 }
 
 void Painter::paintImage(const ImageLayoutObject* imageObject, DisplayList& displayList) {
-    // TODO: Paint image
     const Rect& rect = imageObject->getRect();
     const ImageObject* imgObj = static_cast<const ImageObject*>(imageObject->getSourceObject());
-    
     auto imageOp = std::make_unique<DrawImageOp>(rect, imgObj->getSrc());
     displayList.push_back(std::move(imageOp));
 }
 
 void Painter::paintBackground(const LayoutObject* layoutObject, DisplayList& displayList) {
-    // TODO: Paint background based on object type
     Color bgColor = getBackgroundColor(layoutObject->getSourceObject());
-    
-    // Only paint background if it's not transparent
     if (bgColor.a > 0) {
         const Rect& rect = layoutObject->getRect();
         auto rectOp = std::make_unique<DrawRectOp>(rect, bgColor);
@@ -88,7 +83,9 @@ void Painter::paintBackground(const LayoutObject* layoutObject, DisplayList& dis
 }
 
 void Painter::paintBorder(const LayoutObject* layoutObject, DisplayList& displayList) {
-    // TODO: Paint borders based on object styling
+    (void)layoutObject;
+    (void)displayList;
+    // Border painting not yet implemented
 }
 
 Color Painter::getTextColor(const MarkdownObject* object) {
@@ -103,7 +100,6 @@ Color Painter::getTextColor(const MarkdownObject* object) {
 }
 
 Color Painter::getBackgroundColor(const MarkdownObject* object) {
-    // TODO: Get background color based on object type
     switch (object->getType()) {
         case MarkdownObjectType::CodeBlock:
             return Color(240, 240, 240, 255); // Light gray
@@ -116,11 +112,171 @@ Color Painter::getBackgroundColor(const MarkdownObject* object) {
 
 void Painter::paintDebugBorder(const LayoutObject* layoutObject, DisplayList& displayList) {
     const Rect& rect = layoutObject->getRect();
-    
-    // Use BRIGHT MAGENTA so it's very visible
-    Color debugColor = Color(255, 0, 255, 255); // Bright magenta, fully opaque
-    
-    // Create debug border rect (we'll draw it as an outline in the rasterizer)
+    Color debugColor = Color(255, 0, 255, 255);
     auto debugOp = std::make_unique<DrawDebugBorderOp>(rect, debugColor);
     displayList.push_back(std::move(debugOp));
+}
+
+float Painter::computeXForOffset(int offset, const char* text, float fontSize, float startX) {
+    // Simple monospace approximation: each char is ~0.6 * fontSize wide
+    float charWidth = fontSize * 0.6f;
+    float x = startX;
+
+    // Find the start of the line containing offset
+    int lineStart = offset;
+    while (lineStart > 0 && text[lineStart - 1] != '\n') {
+        lineStart--;
+    }
+
+    // Count characters from line start to offset
+    for (int i = lineStart; i < offset && text[i] != '\0' && text[i] != '\n'; i++) {
+        x += charWidth;
+    }
+    return x;
+}
+
+void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
+                         const char* text, int textLength, const LayoutObject* layoutRoot) {
+    (void)text;
+    (void)textLength;
+
+    // Find layout object for cursor position
+    DOMPositionResult result = findLayoutForPosition(layoutRoot, caret.cursorPosition);
+    if (!result.layout) return;
+
+    const Rect& rect = result.layout->getRect();
+    float caretX, caretY, caretHeight;
+
+    if (result.layout->isAtomic()) {
+        // Atomic element (image, etc.)
+        caretY = rect.position.y;
+        caretHeight = rect.size.height;
+        if (result.localOffset == 0) {
+            caretX = rect.position.x;  // Left edge
+        } else {
+            caretX = rect.position.x + rect.size.width;  // Right edge
+        }
+    } else if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(result.layout)) {
+        // Text element - use glyph positions
+        caretY = rect.position.y;
+        caretHeight = textLayout->getFontSize() * 1.2f;
+        caretX = rect.position.x;
+
+        if (result.localOffset > 0 && result.localOffset <= textLayout->getCharCount()) {
+            caretX += textLayout->getCharXOffset(result.localOffset - 1);
+        }
+    } else {
+        return;  // Container or unknown type
+    }
+
+    Color caretColor(0, 0, 0, 255);
+    auto caretOp = std::make_unique<DrawCaretOp>(Point(caretX, caretY), caretHeight, caretColor);
+    displayList.push_back(std::move(caretOp));
+}
+
+void Painter::paintSelection(DisplayList& displayList, const CaretState& caret,
+                             const char* text, int textLength, const LayoutObject* layoutRoot) {
+    (void)text;
+    (void)textLength;
+
+    int startPos = std::min(caret.selectionStart, caret.selectionEnd);
+    int endPos = std::max(caret.selectionStart, caret.selectionEnd);
+    if (startPos == endPos) return;
+
+    std::vector<const LayoutObject*> contentLayouts;
+    collectContentLayouts(layoutRoot, contentLayouts);
+
+    int currentPos = 0;
+    Color selColor(173, 214, 255, 180);
+
+    for (const auto* layout : contentLayouts) {
+        int len = layout->getDOMLength();
+        int objStart = currentPos;
+        int objEnd = currentPos + len;
+
+        // Check if selection overlaps this object
+        if (startPos < objEnd && endPos > objStart) {
+            int localStart = std::max(0, startPos - objStart);
+            int localEnd = std::min(len, endPos - objStart);
+
+            Rect selRect = computeSelectionRect(layout, localStart, localEnd);
+            auto selOp = std::make_unique<DrawSelectionRectOp>(selRect, selColor);
+            displayList.push_back(std::move(selOp));
+        }
+        currentPos += len;
+    }
+}
+
+// Collect all content-bearing layout objects in document order
+void Painter::collectContentLayouts(const LayoutObject* obj, std::vector<const LayoutObject*>& out) {
+    if (!obj) return;
+
+    // Check if this object has DOM content
+    if (obj->getDOMLength() > 0) {
+        out.push_back(obj);
+    }
+
+    // Recurse into children
+    for (const auto& child : obj->getChildren()) {
+        collectContentLayouts(child.get(), out);
+    }
+}
+
+// Find layout object and local offset for a global DOM position
+DOMPositionResult Painter::findLayoutForPosition(const LayoutObject* root, int domPosition) {
+    DOMPositionResult result;
+
+    std::vector<const LayoutObject*> contentLayouts;
+    collectContentLayouts(root, contentLayouts);
+
+    int currentPos = 0;
+    for (const auto* layout : contentLayouts) {
+        int len = layout->getDOMLength();
+        if (domPosition < currentPos + len) {
+            // Found the containing object
+            result.layout = layout;
+            result.localOffset = domPosition - currentPos;
+            result.isAtomicBoundary = layout->isAtomic();
+            return result;
+        }
+        currentPos += len;
+    }
+
+    // Position is at or beyond end - use last object
+    if (!contentLayouts.empty()) {
+        result.layout = contentLayouts.back();
+        result.localOffset = result.layout->getDOMLength();
+        result.isAtomicBoundary = result.layout->isAtomic();
+    }
+
+    return result;
+}
+
+// Compute selection rect for a portion of a layout object
+Rect Painter::computeSelectionRect(const LayoutObject* layout, int localStart, int localEnd) {
+    const Rect& rect = layout->getRect();
+
+    if (layout->isAtomic()) {
+        // Atomic element: select entire rect
+        return rect;
+    }
+
+    if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(layout)) {
+        float x1 = rect.position.x;
+        float x2 = rect.position.x;
+
+        if (localStart > 0 && localStart <= textLayout->getCharCount()) {
+            x1 += textLayout->getCharXOffset(localStart - 1);
+        }
+        if (localEnd > 0 && localEnd <= textLayout->getCharCount()) {
+            x2 += textLayout->getCharXOffset(localEnd - 1);
+        } else if (localEnd > textLayout->getCharCount() && textLayout->getCharCount() > 0) {
+            x2 += textLayout->getCharXOffset(textLayout->getCharCount() - 1);
+        }
+
+        float height = textLayout->getFontSize() * 1.2f;
+        return Rect(x1, rect.position.y, x2 - x1, height);
+    }
+
+    return rect;
 }

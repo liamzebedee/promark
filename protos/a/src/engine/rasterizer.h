@@ -29,6 +29,8 @@ private:
     void executeSetClip(const SetClipOp& op);
     void executeRestoreClip(const RestoreClipOp& op);
     void executeDrawDebugBorder(const DrawDebugBorderOp& op);
+    void executeDrawCaret(const DrawCaretOp& op);
+    void executeDrawSelectionRect(const DrawSelectionRectOp& op);
     
     void loadImage(const std::string& imagePath);
     void decodeJpeg(const std::string& filePath);

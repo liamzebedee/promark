@@ -18,54 +18,84 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parse(const std::string& markdow
 
 std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string& text) {
     auto document = std::make_unique<MarkdownObject>(MarkdownObjectType::Document);
-    
-    std::string line;
-    std::istringstream stream(text);
-    
-    while (std::getline(stream, line)) {
-        
-        // Handle empty lines as empty paragraphs (preserves spacing)
+    document->setRawRange(0, static_cast<int>(text.length()));
+
+    size_t pos = 0;
+    size_t textLen = text.length();
+
+    while (pos < textLen) {
+        // Find end of current line
+        size_t lineStart = pos;
+        size_t lineEnd = pos;
+        while (lineEnd < textLen && text[lineEnd] != '\n') {
+            lineEnd++;
+        }
+
+        std::string line = text.substr(lineStart, lineEnd - lineStart);
+        size_t nextLineStart = (lineEnd < textLen) ? lineEnd + 1 : lineEnd;
+
+        // Handle empty lines as empty paragraphs
         if (line.empty()) {
             auto emptyParagraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
+            emptyParagraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+
             auto emptyText = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-            emptyText->setText(""); // Empty text creates visual spacing
+            emptyText->setText("");
+            emptyText->setRawRange(static_cast<int>(lineStart), static_cast<int>(lineStart));
+            emptyText->setTextOffset(0);
             emptyParagraph->addChild(std::move(emptyText));
+
             document->addChild(std::move(emptyParagraph));
+            pos = nextLineStart;
             continue;
         }
-        
+
         // Check if line is a heading
         if (line[0] == '#') {
             int level = 0;
-            size_t pos = 0;
-            while (pos < line.length() && line[pos] == '#') {
+            size_t syntaxEnd = 0;
+            while (syntaxEnd < line.length() && line[syntaxEnd] == '#') {
                 level++;
-                pos++;
+                syntaxEnd++;
             }
-            
+
             // Skip space after #
-            if (pos < line.length() && line[pos] == ' ') {
-                pos++;
+            if (syntaxEnd < line.length() && line[syntaxEnd] == ' ') {
+                syntaxEnd++;
             }
-            
-            // Get heading text
-            std::string headingText = line.substr(pos);
-            
+
+            // Get heading text - starts at lineStart + syntaxEnd in raw
+            std::string headingText = line.substr(syntaxEnd);
+            int textRawStart = static_cast<int>(lineStart + syntaxEnd);
+            int textRawEnd = static_cast<int>(lineEnd);
+
             auto heading = std::make_unique<HeadingObject>(level);
+            heading->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+
             auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
             textNode->setText(headingText);
+            textNode->setRawRange(textRawStart, textRawEnd);
+            textNode->setTextOffset(0);  // Text starts at textRawStart
+
             heading->addChild(std::move(textNode));
             document->addChild(std::move(heading));
         } else {
-            // Regular paragraph
+            // Regular paragraph - no syntax stripping
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
+            paragraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+
             auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
             textNode->setText(line);
+            textNode->setRawRange(static_cast<int>(lineStart), static_cast<int>(lineEnd));
+            textNode->setTextOffset(0);
+
             paragraph->addChild(std::move(textNode));
             document->addChild(std::move(paragraph));
         }
+
+        pos = nextLineStart;
     }
-    
+
     return document;
 }
 

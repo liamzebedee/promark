@@ -19,7 +19,7 @@ Engine::Engine() : scrollOffset(0.0f), inputLength(0), fontLoaded(false),
     // Copy to input buffer for editing
     strncpy(inputBuffer, initialContent.c_str(), sizeof(inputBuffer) - 1);
     inputLength = initialContent.length();
-    cursorPos = inputLength;
+    cursorPos = 0;  // Start at beginning
     
     textBuffer->setText(initialContent);
     markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
@@ -73,7 +73,10 @@ bool Engine::initialize() {
         std::cerr << "Failed to load any system font" << std::endl;
         return false;
     }
-    
+
+    // Pass font face to markdown renderer for glyph metrics
+    markdownRenderer->setFontFace(face);
+
     // Test basic OpenGL functionality
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
@@ -96,8 +99,19 @@ void Engine::render(int width, int height) {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // Only render markdown content
     if (markdownRenderer) {
+        // Convert raw cursor position to DOM position for display
+        int domCursorPos = markdownRenderer->rawToDOM(cursorPos);
+        int domSelStart = markdownRenderer->rawToDOM(selectionStart);
+        int domSelEnd = markdownRenderer->rawToDOM(selectionEnd);
+
+        CaretState caret;
+        caret.cursorPosition = domCursorPos;
+        caret.selectionStart = domSelStart;
+        caret.selectionEnd = domSelEnd;
+        caret.hasSelection = hasSelection;
+        markdownRenderer->setCaretState(caret);
+
         Size viewportSize(width, height);
         markdownRenderer->render(viewportSize);
     }
@@ -124,7 +138,13 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
             } else {
                 moveCursor(1, shift);
             }
-            
+
+        } else if (key == GLFW_KEY_UP) {
+            moveCursorVertically(-1, shift);
+
+        } else if (key == GLFW_KEY_DOWN) {
+            moveCursorVertically(1, shift);
+
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (hasSelection) {
                 // Delete selection
@@ -134,6 +154,13 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 inputLength -= (end - start);
                 cursorPos = start;
                 hasSelection = false;
+
+                // Update markdown content
+                if (textBuffer && markdownRenderer) {
+                    std::string newText(inputBuffer, inputLength);
+                    textBuffer->setText(newText);
+                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+                }
             } else if (alt && cursorPos > 0) {
                 // Alt+Backspace: delete word backwards
                 deleteWordBackward();
@@ -150,10 +177,24 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 inputLength -= (end - start);
                 cursorPos = start;
                 hasSelection = false;
+
+                // Update markdown content
+                if (textBuffer && markdownRenderer) {
+                    std::string newText(inputBuffer, inputLength);
+                    textBuffer->setText(newText);
+                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+                }
             } else if (cursorPos < inputLength) {
                 memmove(inputBuffer + cursorPos, inputBuffer + cursorPos + 1, inputLength - cursorPos);
                 inputLength--;
                 inputBuffer[inputLength] = '\0';
+
+                // Update markdown content
+                if (textBuffer && markdownRenderer) {
+                    std::string newText(inputBuffer, inputLength);
+                    textBuffer->setText(newText);
+                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+                }
             }
             
         } else if (key == GLFW_KEY_HOME) {
@@ -221,9 +262,15 @@ void Engine::handleScroll(double xoffset, double yoffset) {
 }
 
 void Engine::handleMouse(int button, int action, int mods, double x, double y) {
+    (void)mods;
+
     if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        // TODO: Position cursor at click location
-        // For now, do nothing
+        if (markdownRenderer) {
+            // Convert click position to raw cursor position
+            cursorPos = markdownRenderer->hitTest(static_cast<float>(x), static_cast<float>(y));
+            cursorPos = std::max(0, std::min(cursorPos, inputLength));
+            hasSelection = false;
+        }
     }
 }
 
@@ -431,13 +478,12 @@ void Engine::deleteWordBackward() {
     if (cursorPos > 0) {
         int wordStart = findWordBoundary(cursorPos, -1);
         int deleteCount = cursorPos - wordStart;
-        
+
         if (deleteCount > 0) {
             memmove(inputBuffer + wordStart, inputBuffer + cursorPos, inputLength - cursorPos + 1);
             inputLength -= deleteCount;
             cursorPos = wordStart;
-            
-            // Update markdown content
+
             if (textBuffer && markdownRenderer) {
                 std::string newText(inputBuffer, inputLength);
                 textBuffer->setText(newText);
@@ -446,3 +492,64 @@ void Engine::deleteWordBackward() {
         }
     }
 }
+
+int Engine::findLineStart(int pos) {
+    while (pos > 0 && inputBuffer[pos - 1] != '\n') {
+        pos--;
+    }
+    return pos;
+}
+
+int Engine::findLineEnd(int pos) {
+    while (pos < inputLength && inputBuffer[pos] != '\n') {
+        pos++;
+    }
+    return pos;
+}
+
+int Engine::getColumnInLine(int pos) {
+    int lineStart = findLineStart(pos);
+    return pos - lineStart;
+}
+
+int Engine::findPositionInLine(int lineStart, int column) {
+    int lineEnd = findLineEnd(lineStart);
+    int lineLength = lineEnd - lineStart;
+    if (column > lineLength) column = lineLength;
+    return lineStart + column;
+}
+
+void Engine::moveCursorVertically(int direction, bool extendSelection) {
+    int currentLineStart = findLineStart(cursorPos);
+    int column = getColumnInLine(cursorPos);
+    int newPos = cursorPos;
+
+    if (direction < 0) {
+        // Move up
+        if (currentLineStart > 0) {
+            int prevLineEnd = currentLineStart - 1;
+            int prevLineStart = findLineStart(prevLineEnd);
+            newPos = findPositionInLine(prevLineStart, column);
+        }
+    } else {
+        // Move down
+        int currentLineEnd = findLineEnd(cursorPos);
+        if (currentLineEnd < inputLength) {
+            int nextLineStart = currentLineEnd + 1;
+            newPos = findPositionInLine(nextLineStart, column);
+        }
+    }
+
+    if (extendSelection) {
+        if (!hasSelection) {
+            selectionStart = cursorPos;
+            hasSelection = true;
+        }
+        selectionEnd = newPos;
+    } else {
+        hasSelection = false;
+    }
+
+    cursorPos = newPos;
+}
+

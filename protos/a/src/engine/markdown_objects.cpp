@@ -26,6 +26,11 @@ void MarkdownObject::setText(const std::string& text) {
     this->text = text;
 }
 
+void MarkdownObject::setRawRange(int start, int end) {
+    rawStart = start;
+    rawEnd = end;
+}
+
 HeadingObject::HeadingObject(int level) : MarkdownObject(MarkdownObjectType::Heading), level(level) {
 }
 

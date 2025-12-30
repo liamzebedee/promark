@@ -76,3 +76,33 @@ const Rect& DrawDebugBorderOp::getRect() const {
 const Color& DrawDebugBorderOp::getColor() const {
     return color;
 }
+
+// DrawCaretOp
+DrawCaretOp::DrawCaretOp(const Point& position, float height, const Color& color)
+    : PaintOp(PaintOpType::DrawCaret), position(position), height(height), color(color) {
+}
+
+const Point& DrawCaretOp::getPosition() const {
+    return position;
+}
+
+float DrawCaretOp::getHeight() const {
+    return height;
+}
+
+const Color& DrawCaretOp::getColor() const {
+    return color;
+}
+
+// DrawSelectionRectOp
+DrawSelectionRectOp::DrawSelectionRectOp(const Rect& rect, const Color& color)
+    : PaintOp(PaintOpType::DrawSelectionRect), rect(rect), color(color) {
+}
+
+const Rect& DrawSelectionRectOp::getRect() const {
+    return rect;
+}
+
+const Color& DrawSelectionRectOp::getColor() const {
+    return color;
+}

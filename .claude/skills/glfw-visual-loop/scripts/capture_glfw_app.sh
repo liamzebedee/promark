@@ -90,6 +90,17 @@ else
     screencapture -l "$WINDOW_ID" -x "$OUTPUT_PATH"
 fi
 
+
+SIZE=$(stat -f%z "$OUT")
+if [ "$SIZE" -gt 1000000 ]; then
+  NEW_OUT="${OUT%.*}.jpg"
+  sips -s format jpeg -s formatOptions 65 "$OUT" --out "$NEW_OUT" >/dev/null
+  rm "$OUT"
+  OUT="$NEW_OUT"
+fi
+
+OUTPUT_PATH="$OUT"
+
 # Cleanup
 kill $APP_PID 2>/dev/null || true
 wait $APP_PID 2>/dev/null || true

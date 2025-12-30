@@ -16,7 +16,9 @@ enum class PaintOpType {
     DrawImage,
     SetClip,
     RestoreClip,
-    DrawDebugBorder
+    DrawDebugBorder,
+    DrawCaret,
+    DrawSelectionRect
 };
 
 class PaintOp {
@@ -88,10 +90,38 @@ public:
 class DrawDebugBorderOp : public PaintOp {
 public:
     DrawDebugBorderOp(const Rect& rect, const Color& color);
-    
+
     const Rect& getRect() const;
     const Color& getColor() const;
-    
+
+private:
+    Rect rect;
+    Color color;
+};
+
+// Caret (text cursor) - thin vertical line
+class DrawCaretOp : public PaintOp {
+public:
+    DrawCaretOp(const Point& position, float height, const Color& color);
+
+    const Point& getPosition() const;
+    float getHeight() const;
+    const Color& getColor() const;
+
+private:
+    Point position;
+    float height;
+    Color color;
+};
+
+// Selection highlight rectangle (painted behind text)
+class DrawSelectionRectOp : public PaintOp {
+public:
+    DrawSelectionRectOp(const Rect& rect, const Color& color);
+
+    const Rect& getRect() const;
+    const Color& getColor() const;
+
 private:
     Rect rect;
     Color color;

@@ -1,5 +1,7 @@
 #pragma once
 #include "markdown_objects.h"
+#include <ft2build.h>
+#include FT_FREETYPE_H
 #include <vector>
 #include <memory>
 
@@ -42,7 +44,11 @@ public:
     virtual Size computeIntrinsicSize() const;
     virtual void layout(const Size& availableSpace);
     virtual float getFontSize() const;
-    
+
+    // DOM position support - for cursor/selection
+    virtual int getDOMLength() const { return 0; }  // Container = 0
+    virtual bool isAtomic() const { return false; }
+
     void setParent(LayoutObject* parent);
     LayoutObject* getParent() const;
     
@@ -71,19 +77,29 @@ public:
     TextLayoutObject(const MarkdownObject* sourceObject);
     Size computeIntrinsicSize() const override;
     void layout(const Size& availableSpace) override;
-    
+
     struct GlyphRun {
         std::vector<uint32_t> glyphIds;
         std::vector<Point> positions;
         float width;
         float height;
     };
-    
+
     const std::vector<GlyphRun>& getGlyphRuns() const;
-    float getFontSize() const;
-    
+    float getFontSize() const override;
+
+    // DOM position support
+    int getDOMLength() const override;
+    int getCharCount() const;
+    float getCharXOffset(int index) const;  // Cumulative x offset after char at index
+
+    // FreeType face for glyph metrics
+    void setFontFace(FT_Face face);
+
 private:
     std::vector<GlyphRun> glyphRuns;
+    std::vector<float> charXOffsets;  // Cumulative x offset for each character
+    FT_Face fontFace;
     void shapeText();
 };
 
@@ -92,9 +108,13 @@ public:
     ImageLayoutObject(const MarkdownObject* sourceObject);
     Size computeIntrinsicSize() const override;
     void layout(const Size& availableSpace) override;
-    
+
+    // DOM position support - images are atomic (1 position)
+    int getDOMLength() const override { return 1; }
+    bool isAtomic() const override { return true; }
+
 private:
-    Size intrinsicSize;
-    bool sizeComputed;
-    void computeImageSize();
+    mutable Size intrinsicSize;
+    mutable bool sizeComputed;
+    void computeImageSize() const;
 };

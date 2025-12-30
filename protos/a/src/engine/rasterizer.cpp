@@ -55,12 +55,17 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport)
             case PaintOpType::DrawDebugBorder:
                 executeDrawDebugBorder(static_cast<const DrawDebugBorderOp&>(*op));
                 break;
+            case PaintOpType::DrawCaret:
+                executeDrawCaret(static_cast<const DrawCaretOp&>(*op));
+                break;
+            case PaintOpType::DrawSelectionRect:
+                executeDrawSelectionRect(static_cast<const DrawSelectionRectOp&>(*op));
+                break;
         }
     }
 }
 
 void Rasterizer::executeDrawRect(const DrawRectOp& op) {
-    // TODO: Draw rectangle using OpenGL
     const Rect& rect = op.getRect();
     const Color& color = op.getColor();
     
@@ -90,7 +95,6 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
 }
 
 void Rasterizer::executeDrawImage(const DrawImageOp& op) {
-    // TODO: Draw image using OpenGL textures
     const std::string& imagePath = op.getImagePath();
     
     // Load image if not cached
@@ -120,7 +124,6 @@ void Rasterizer::executeDrawImage(const DrawImageOp& op) {
 }
 
 void Rasterizer::executeSetClip(const SetClipOp& op) {
-    // TODO: Set clipping rectangle
     currentClip = op.getClipRect();
     hasClip = true;
     
@@ -131,7 +134,7 @@ void Rasterizer::executeSetClip(const SetClipOp& op) {
 }
 
 void Rasterizer::executeRestoreClip(const RestoreClipOp& op) {
-    // TODO: Restore previous clipping state
+    (void)op;  // Unused
     hasClip = false;
     glDisable(GL_SCISSOR_TEST);
 }
@@ -286,8 +289,7 @@ void Rasterizer::renderText(const std::string& text, float x, float y, const Col
 void Rasterizer::executeDrawDebugBorder(const DrawDebugBorderOp& op) {
     const Rect& rect = op.getRect();
     const Color& color = op.getColor();
-    
-    // Make debug borders very thick and visible
+
     glLineWidth(3.0f);
     glColor4ub(color.r, color.g, color.b, color.a);
     glBegin(GL_LINE_LOOP);
@@ -296,5 +298,39 @@ void Rasterizer::executeDrawDebugBorder(const DrawDebugBorderOp& op) {
     glVertex2f(rect.position.x + rect.size.width, rect.position.y + rect.size.height);
     glVertex2f(rect.position.x, rect.position.y + rect.size.height);
     glEnd();
-    glLineWidth(1.0f); // Reset line width
+    glLineWidth(1.0f);
+}
+
+void Rasterizer::executeDrawCaret(const DrawCaretOp& op) {
+    const Point& pos = op.getPosition();
+    float height = op.getHeight();
+    const Color& color = op.getColor();
+
+    // Draw caret as a thin vertical line (2px wide)
+    glColor4ub(color.r, color.g, color.b, color.a);
+    glBegin(GL_QUADS);
+    glVertex2f(pos.x, pos.y);
+    glVertex2f(pos.x + 2.0f, pos.y);
+    glVertex2f(pos.x + 2.0f, pos.y + height);
+    glVertex2f(pos.x, pos.y + height);
+    glEnd();
+}
+
+void Rasterizer::executeDrawSelectionRect(const DrawSelectionRectOp& op) {
+    const Rect& rect = op.getRect();
+    const Color& color = op.getColor();
+
+    // Enable blending for translucent selection highlight
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glColor4ub(color.r, color.g, color.b, color.a);
+    glBegin(GL_QUADS);
+    glVertex2f(rect.position.x, rect.position.y);
+    glVertex2f(rect.position.x + rect.size.width, rect.position.y);
+    glVertex2f(rect.position.x + rect.size.width, rect.position.y + rect.size.height);
+    glVertex2f(rect.position.x, rect.position.y + rect.size.height);
+    glEnd();
+
+    glDisable(GL_BLEND);
 }

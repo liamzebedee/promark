@@ -1,10 +1,18 @@
 #include "layout_engine.h"
 #include <iostream>
 
-LayoutEngine::LayoutEngine() {
+LayoutEngine::LayoutEngine() : fontFace(nullptr) {
 }
 
 LayoutEngine::~LayoutEngine() {
+}
+
+void LayoutEngine::setFontFace(FT_Face face) {
+    fontFace = face;
+}
+
+FT_Face LayoutEngine::getFontFace() const {
+    return fontFace;
 }
 
 std::unique_ptr<LayoutObject> LayoutEngine::createLayoutTree(const MarkdownObject* objectTree) {
@@ -51,6 +59,7 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
             
         case MarkdownObjectType::Text: {
             auto textLayout = std::make_unique<TextLayoutObject>(object);
+            textLayout->setFontFace(fontFace);
             return textLayout;
         }
             

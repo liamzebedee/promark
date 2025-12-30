@@ -1,5 +1,4 @@
 #include "layout_objects.h"
-#include <iostream>
 
 LayoutObject::LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow) 
     : sourceObject(sourceObject), flow(flow), parent(nullptr) {
@@ -44,17 +43,20 @@ void LayoutObject::layout(const Size& availableSpace) {
 
 float LayoutObject::getFontSize() const {
     // Base implementation - different object types override this
+    // Base size: 11pt ≈ 22px on Retina (2x DPI)
+    constexpr float baseFontSize = 22.0f;
+
     switch (sourceObject->getType()) {
         case MarkdownObjectType::Heading: {
             const HeadingObject* heading = static_cast<const HeadingObject*>(sourceObject);
             switch (heading->getLevel()) {
-                case 1: return 32.0f;
-                case 2: return 28.0f;
-                case 3: return 24.0f;
-                case 4: return 20.0f;
-                case 5: return 18.0f;
-                case 6: return 16.0f;
-                default: return 24.0f;
+                case 1: return baseFontSize * 2.0f;    // 44px
+                case 2: return baseFontSize * 1.75f;   // 38.5px
+                case 3: return baseFontSize * 1.5f;    // 33px
+                case 4: return baseFontSize * 1.25f;   // 27.5px
+                case 5: return baseFontSize * 1.1f;    // 24.2px
+                case 6: return baseFontSize;           // 22px
+                default: return baseFontSize * 1.5f;
             }
         }
         case MarkdownObjectType::Text:
@@ -62,9 +64,9 @@ float LayoutObject::getFontSize() const {
             if (parent) {
                 return parent->getFontSize();
             }
-            return 16.0f; // Default body text
+            return baseFontSize;
         default:
-            return 16.0f; // Default
+            return baseFontSize;
     }
 }
 
@@ -81,27 +83,19 @@ BlockLayoutObject::BlockLayoutObject(const MarkdownObject* sourceObject)
 }
 
 void BlockLayoutObject::layout(const Size& availableSpace) {
-    // Simple block layout - stack children vertically
-    float currentY = 100; // Start well away from top edge
-    float leftMargin = 100; // Start well away from left edge
-    
-    std::cout << "BlockLayout: positioning " << children.size() << " children" << std::endl;
-    
+    // Note: This is called for nested blocks. Root layout is handled by LayoutEngine.
+    // For nested blocks, children are positioned relative to parent.
+    float currentY = 0;
+
     for (const auto& child : children) {
-        // Give each child full width, height based on content
-        Size childAvailableSpace(availableSpace.width - leftMargin, availableSpace.height - currentY);
+        Size childAvailableSpace(availableSpace.width, availableSpace.height - currentY);
         child->layout(childAvailableSpace);
-        
+
         const Rect& childRect = child->getRect();
-        // Set absolute position for child
-        Rect newRect(leftMargin, currentY, childRect.size.width, childRect.size.height);
-        child->setRect(newRect);
-        
-        std::cout << "BlockLayout: set child rect to (" << leftMargin << "," << currentY << "," << childRect.size.width << "," << childRect.size.height << ")" << std::endl;
-        
-        currentY += childRect.size.height + 30; // Add more spacing between blocks
+        child->setRect(Rect(0, currentY, childRect.size.width, childRect.size.height));
+        currentY += childRect.size.height;
     }
-    
+
     setRect(Rect(0, 0, availableSpace.width, currentY));
 }
 
@@ -113,26 +107,40 @@ void InlineLayoutObject::layout(const Size& availableSpace) {
     // TODO: Implement inline layout (horizontal flow with line breaking)
 }
 
-TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject) 
-    : LayoutObject(sourceObject, LayoutFlow::Inline) {
+TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
+    : LayoutObject(sourceObject, LayoutFlow::Inline), fontFace(nullptr) {
 }
 
 Size TextLayoutObject::computeIntrinsicSize() const {
-    // Get text and compute size based on parent object type
     std::string text = sourceObject->getText();
-    
     float fontSize = getFontSize();
-    float charWidth = fontSize * 0.6f; // Rough character width estimate
-    float lineHeight = fontSize * 1.2f; // Line height with some spacing
-    
+    float lineHeight = fontSize * 1.2f;
+
     if (text.empty()) {
-        // Empty text still takes up vertical space (for blank lines)
         return Size(0, lineHeight);
     }
-    
-    // Simple width calculation (actual implementation would use font metrics)
-    float width = text.length() * charWidth;
-    
+
+    // If we have glyph offsets computed, use the last one for width
+    if (!charXOffsets.empty()) {
+        return Size(charXOffsets.back(), lineHeight);
+    }
+
+    // Fallback: compute width using FreeType or monospace estimate
+    float width = 0.0f;
+    if (fontFace) {
+        FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
+        for (char c : text) {
+            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(c));
+            if (FT_Load_Glyph(fontFace, glyphIndex, FT_LOAD_DEFAULT) == 0) {
+                width += fontFace->glyph->advance.x / 64.0f;
+            } else {
+                width += fontSize * 0.6f;
+            }
+        }
+    } else {
+        width = text.length() * fontSize * 0.6f;
+    }
+
     return Size(width, lineHeight);
 }
 
@@ -155,14 +163,61 @@ const std::vector<TextLayoutObject::GlyphRun>& TextLayoutObject::getGlyphRuns() 
     return glyphRuns;
 }
 
+void TextLayoutObject::setFontFace(FT_Face face) {
+    fontFace = face;
+}
+
+int TextLayoutObject::getDOMLength() const {
+    int len = static_cast<int>(sourceObject->getText().length());
+    // Empty lines still occupy 1 DOM position (like a newline)
+    return (len == 0) ? 1 : len;
+}
+
+int TextLayoutObject::getCharCount() const {
+    return static_cast<int>(charXOffsets.size());
+}
+
+float TextLayoutObject::getCharXOffset(int index) const {
+    if (index < 0 || index >= static_cast<int>(charXOffsets.size())) {
+        return 0.0f;
+    }
+    return charXOffsets[index];
+}
+
 void TextLayoutObject::shapeText() {
-    // TODO: Use HarfBuzz to shape text into glyphs
-    // For now, create a placeholder glyph run
-    GlyphRun run;
-    run.width = 100;
-    run.height = 20;
     glyphRuns.clear();
-    glyphRuns.push_back(run);
+    charXOffsets.clear();
+
+    std::string text = sourceObject->getText();
+    if (text.empty()) {
+        return;
+    }
+
+    float fontSize = getFontSize();
+    float x = 0.0f;
+
+    if (fontFace) {
+        // Use FreeType for accurate glyph metrics
+        FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
+
+        for (size_t i = 0; i < text.length(); i++) {
+            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(text[i]));
+            if (FT_Load_Glyph(fontFace, glyphIndex, FT_LOAD_DEFAULT) == 0) {
+                x += fontFace->glyph->advance.x / 64.0f;  // advance in 1/64 pixels
+            } else {
+                // Fallback for missing glyphs
+                x += fontSize * 0.6f;
+            }
+            charXOffsets.push_back(x);
+        }
+    } else {
+        // Fallback: monospace approximation
+        float charWidth = fontSize * 0.6f;
+        for (size_t i = 0; i < text.length(); i++) {
+            x += charWidth;
+            charXOffsets.push_back(x);
+        }
+    }
 }
 
 ImageLayoutObject::ImageLayoutObject(const MarkdownObject* sourceObject) 
@@ -171,19 +226,19 @@ ImageLayoutObject::ImageLayoutObject(const MarkdownObject* sourceObject)
 
 Size ImageLayoutObject::computeIntrinsicSize() const {
     if (!sizeComputed) {
-        const_cast<ImageLayoutObject*>(this)->computeImageSize();
+        computeImageSize();
     }
     return intrinsicSize;
 }
 
 void ImageLayoutObject::layout(const Size& availableSpace) {
-    // TODO: Layout image with proper sizing
+    (void)availableSpace;  // Will be used for constraining image size
     Size size = computeIntrinsicSize();
     setRect(Rect(0, 0, size.width, size.height));
 }
 
-void ImageLayoutObject::computeImageSize() {
-    // TODO: Load and decode image to determine actual size
-    intrinsicSize = Size(200, 150); // Placeholder
+void ImageLayoutObject::computeImageSize() const {
+    // Placeholder - actual image decoding not yet implemented
+    intrinsicSize = Size(200, 150);
     sizeComputed = true;
 }

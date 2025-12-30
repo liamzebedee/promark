@@ -36,7 +36,7 @@ Arguments:
 1. Runs `make` in project directory
 2. Finds executable by parsing Makefile for TARGET/EXECUTABLE/BIN/APP variables, or falls back to finding most recently modified executable
 3. Launches app in background
-4. Waits up to 5 seconds for window to appear
+4. Waits 5 seconds or less for window to appear
 5. Captures window screenshot using `screencapture -l <windowID>`
 6. Kills the app
 7. Outputs the screenshot path

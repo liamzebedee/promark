@@ -59,7 +59,12 @@ private:
     // Text navigation helpers
     void moveCursor(int delta, bool extendSelection);
     void moveCursorByWord(int direction, bool extendSelection);
+    void moveCursorVertically(int direction, bool extendSelection);
     int findWordBoundary(int pos, int direction);
+    int findLineStart(int pos);
+    int findLineEnd(int pos);
+    int getColumnInLine(int pos);
+    int findPositionInLine(int lineStart, int column);
     void insertChar(char c);
     void deleteChar();
     void deleteWordBackward();
