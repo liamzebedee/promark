@@ -33,15 +33,22 @@ void MarkdownRenderer::render(const Size& viewportSize) {
     if (needsReparse) {
         parseMarkdown();
     }
-    
+
+    // Check if viewport size changed - need to relayout
+    if (viewportSize.width != lastViewportSize.width ||
+        viewportSize.height != lastViewportSize.height) {
+        needsRelayout = true;
+        lastViewportSize = viewportSize;
+    }
+
     if (needsRelayout) {
         performLayout(viewportSize);
     }
-    
+
     if (needsRepaint) {
         paint();
     }
-    
+
     rasterize(viewportSize);
 }
 

@@ -60,4 +60,6 @@ private:
     bool needsReparse;
     bool needsRelayout;
     bool needsRepaint;
+
+    Size lastViewportSize;
 };

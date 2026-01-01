@@ -57,13 +57,24 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
     const Rect& rect = textObject->getRect();
     Color textColor = getTextColor(textObject->getSourceObject());
     float fontSize = textObject->getFontSize();
-    std::string text = textObject->getSourceObject()->getText();
+    std::string fullText = textObject->getSourceObject()->getText();
+    const auto& lines = textObject->getLines();
 
-    // Use position from layout rect
-    // Text baseline offset: move down by fontSize since rect.y is top of text box
-    Point textPos(rect.position.x, rect.position.y + fontSize);
-    auto textOp = std::make_unique<DrawTextOp>(textPos, text, textColor, fontSize);
-    displayList.push_back(std::move(textOp));
+    if (lines.empty()) {
+        // Fallback: render full text as single line
+        Point textPos(rect.position.x, rect.position.y + fontSize);
+        auto textOp = std::make_unique<DrawTextOp>(textPos, fullText, textColor, fontSize);
+        displayList.push_back(std::move(textOp));
+        return;
+    }
+
+    // Render each wrapped line
+    for (const auto& line : lines) {
+        std::string lineText = fullText.substr(line.startChar, line.endChar - line.startChar);
+        Point textPos(rect.position.x, rect.position.y + line.yOffset + fontSize);
+        auto textOp = std::make_unique<DrawTextOp>(textPos, lineText, textColor, fontSize);
+        displayList.push_back(std::move(textOp));
+    }
 }
 
 void Painter::paintImage(const ImageLayoutObject* imageObject, DisplayList& displayList) {
@@ -157,13 +168,25 @@ void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
             caretX = rect.position.x + rect.size.width;  // Right edge
         }
     } else if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(result.layout)) {
-        // Text element - use glyph positions
-        caretY = rect.position.y;
+        // Text element - use glyph positions and line info
         caretHeight = textLayout->getFontSize() * 1.2f;
         caretX = rect.position.x;
 
-        if (result.localOffset > 0 && result.localOffset <= textLayout->getCharCount()) {
-            caretX += textLayout->getCharXOffset(result.localOffset - 1);
+        const auto& lines = textLayout->getLines();
+        if (!lines.empty() && result.localOffset >= 0) {
+            int lineIdx = textLayout->getLineForChar(result.localOffset);
+            const auto& line = lines[lineIdx];
+            caretY = rect.position.y + line.yOffset;
+
+            // Get x offset within line
+            if (result.localOffset > line.startChar) {
+                caretX += textLayout->getCharXOffsetInLine(result.localOffset);
+            }
+        } else {
+            caretY = rect.position.y;
+            if (result.localOffset > 0 && result.localOffset <= textLayout->getCharCount()) {
+                caretX += textLayout->getCharXOffset(result.localOffset - 1);
+            }
         }
     } else {
         return;  // Container or unknown type
@@ -199,6 +222,42 @@ void Painter::paintSelection(DisplayList& displayList, const CaretState& caret,
             int localStart = std::max(0, startPos - objStart);
             int localEnd = std::min(len, endPos - objStart);
 
+            // Handle wrapped text with multiple lines
+            if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(layout)) {
+                const auto& lines = textLayout->getLines();
+                if (!lines.empty()) {
+                    const Rect& rect = layout->getRect();
+                    float fontSize = textLayout->getFontSize();
+                    float lineHeight = fontSize * 1.2f;
+
+                    int startLine = textLayout->getLineForChar(localStart);
+                    int endLine = textLayout->getLineForChar(localEnd > 0 ? localEnd - 1 : 0);
+
+                    for (int lineIdx = startLine; lineIdx <= endLine; lineIdx++) {
+                        const auto& line = lines[lineIdx];
+                        float x1 = rect.position.x;
+                        float x2 = rect.position.x + line.width;
+
+                        // Adjust x1 for first line of selection
+                        if (lineIdx == startLine && localStart > line.startChar) {
+                            x1 += textLayout->getCharXOffsetInLine(localStart);
+                        }
+
+                        // Adjust x2 for last line of selection
+                        if (lineIdx == endLine && localEnd < line.endChar) {
+                            x2 = rect.position.x + textLayout->getCharXOffsetInLine(localEnd);
+                        }
+
+                        Rect selRect(x1, rect.position.y + line.yOffset, x2 - x1, lineHeight);
+                        auto selOp = std::make_unique<DrawSelectionRectOp>(selRect, selColor);
+                        displayList.push_back(std::move(selOp));
+                    }
+                    currentPos += len;
+                    continue;
+                }
+            }
+
+            // Fallback for non-wrapped or non-text objects
             Rect selRect = computeSelectionRect(layout, localStart, localEnd);
             auto selOp = std::make_unique<DrawSelectionRectOp>(selRect, selColor);
             displayList.push_back(std::move(selOp));
@@ -253,6 +312,8 @@ DOMPositionResult Painter::findLayoutForPosition(const LayoutObject* root, int d
 }
 
 // Compute selection rect for a portion of a layout object
+// Note: For wrapped text, this returns the rect for the first line only.
+// Multi-line selection needs multiple rects - handled in paintSelection
 Rect Painter::computeSelectionRect(const LayoutObject* layout, int localStart, int localEnd) {
     const Rect& rect = layout->getRect();
 
@@ -262,20 +323,47 @@ Rect Painter::computeSelectionRect(const LayoutObject* layout, int localStart, i
     }
 
     if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(layout)) {
+        const auto& lines = textLayout->getLines();
+        float fontSize = textLayout->getFontSize();
+        float lineHeight = fontSize * 1.2f;
+
+        if (lines.empty()) {
+            // Fallback for unwrapped text
+            float x1 = rect.position.x;
+            float x2 = rect.position.x;
+
+            if (localStart > 0 && localStart <= textLayout->getCharCount()) {
+                x1 += textLayout->getCharXOffset(localStart - 1);
+            }
+            if (localEnd > 0 && localEnd <= textLayout->getCharCount()) {
+                x2 += textLayout->getCharXOffset(localEnd - 1);
+            } else if (localEnd > textLayout->getCharCount() && textLayout->getCharCount() > 0) {
+                x2 += textLayout->getCharXOffset(textLayout->getCharCount() - 1);
+            }
+
+            return Rect(x1, rect.position.y, x2 - x1, lineHeight);
+        }
+
+        // Find which line the selection starts on
+        int startLine = textLayout->getLineForChar(localStart);
         float x1 = rect.position.x;
-        float x2 = rect.position.x;
-
-        if (localStart > 0 && localStart <= textLayout->getCharCount()) {
-            x1 += textLayout->getCharXOffset(localStart - 1);
-        }
-        if (localEnd > 0 && localEnd <= textLayout->getCharCount()) {
-            x2 += textLayout->getCharXOffset(localEnd - 1);
-        } else if (localEnd > textLayout->getCharCount() && textLayout->getCharCount() > 0) {
-            x2 += textLayout->getCharXOffset(textLayout->getCharCount() - 1);
+        if (localStart > lines[startLine].startChar) {
+            x1 += textLayout->getCharXOffsetInLine(localStart);
         }
 
-        float height = textLayout->getFontSize() * 1.2f;
-        return Rect(x1, rect.position.y, x2 - x1, height);
+        // For single-line selection within one line
+        int endLine = textLayout->getLineForChar(localEnd > 0 ? localEnd - 1 : 0);
+        if (startLine == endLine) {
+            float x2 = rect.position.x;
+            if (localEnd > lines[startLine].startChar) {
+                x2 += textLayout->getCharXOffsetInLine(localEnd);
+            }
+            return Rect(x1, rect.position.y + lines[startLine].yOffset, x2 - x1, lineHeight);
+        }
+
+        // Multi-line: return first line rect (paintSelection handles the rest)
+        float x2 = rect.position.x + lines[startLine].width;
+        return Rect(x1, rect.position.y + lines[startLine].yOffset, x2 - x1, lineHeight);
     }
 
     return rect;

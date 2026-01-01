@@ -14,7 +14,7 @@ Engine::Engine() : leftMouseHeld(false), scrollOffset(0.0f), inputLength(0), fon
     textBuffer = std::make_unique<TextBuffer>();
     
     // Set up initial markdown content - includes a 64x64 red square PNG test image
-    std::string initialContent = "# Welcome to Markdown Editor\n\nThis is a paragraph of body text.\n\n![red square](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAeUlEQVR4nO3PQQkAMAzAwGqqfykTMxF7HINABFzm7H7dcEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFDWhBA1rQgBY0oAUNaEEDWtCAFjSgBQ1oQQNa0IAWNKAFj10YCQEtRI8KmQAAAABJRU5ErkJggg==)\n\nMore text after the image.";
+    std::string initialContent = "# Welcome to Markdown Editor\n\nThis is a paragraph of body text that is long enough to demonstrate word wrapping when the window is resized to a narrower width. The text should automatically break at word boundaries.\n\nHere is another paragraph with even more content to show how multiple paragraphs wrap independently. Each paragraph maintains its own line breaking.\n\nMore text after the paragraphs.";
     
     // Copy to input buffer for editing
     strncpy(inputBuffer, initialContent.c_str(), sizeof(inputBuffer) - 1);

@@ -7,3 +7,9 @@
     - Quote blocks have a thick gray left border (5px) and are indented from that.
     - Code has a background color is rendered using fixed-width font rendering.
 - scrolling
+    - vertical scrolling
+    - scrolling is bungee scrolling (as in Apple products)
+- window resize
+    - when resize happens, we live resize the content
+    - content is wrapped - ie. words follow to new lines. tables/images are scaled.
+

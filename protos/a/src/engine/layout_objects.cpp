@@ -109,7 +109,7 @@ void InlineLayoutObject::layout(const Size& availableSpace) {
 }
 
 TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
-    : LayoutObject(sourceObject, LayoutFlow::Inline), fontFace(nullptr) {
+    : LayoutObject(sourceObject, LayoutFlow::Inline), fontFace(nullptr), availableWidth(0) {
 }
 
 Size TextLayoutObject::computeIntrinsicSize() const {
@@ -119,6 +119,15 @@ Size TextLayoutObject::computeIntrinsicSize() const {
 
     if (text.empty()) {
         return Size(0, lineHeight);
+    }
+
+    // If we have lines computed, use them for size
+    if (!lines.empty()) {
+        float maxWidth = 0;
+        for (const auto& line : lines) {
+            maxWidth = std::max(maxWidth, line.width);
+        }
+        return Size(maxWidth, lines.size() * lineHeight);
     }
 
     // If we have glyph offsets computed, use the last one for width
@@ -154,10 +163,11 @@ float TextLayoutObject::getFontSize() const {
 }
 
 void TextLayoutObject::layout(const Size& availableSpace) {
-    // Compute text size and set rect
-    Size textSize = computeIntrinsicSize();
-    setRect(Rect(0, 0, textSize.width, textSize.height));
+    availableWidth = availableSpace.width;
     shapeText();
+    wrapText(availableSpace.width);
+    Size textSize = computeIntrinsicSize();
+    setRect(Rect(0, 0, availableSpace.width, textSize.height));
 }
 
 const std::vector<TextLayoutObject::GlyphRun>& TextLayoutObject::getGlyphRuns() const {
@@ -219,6 +229,101 @@ void TextLayoutObject::shapeText() {
             charXOffsets.push_back(x);
         }
     }
+}
+
+void TextLayoutObject::wrapText(float maxWidth) {
+    lines.clear();
+    std::string text = sourceObject->getText();
+
+    if (text.empty() || charXOffsets.empty()) {
+        // Empty line still needs a line entry
+        LineInfo line;
+        line.startChar = 0;
+        line.endChar = 0;
+        line.yOffset = 0;
+        line.width = 0;
+        lines.push_back(line);
+        return;
+    }
+
+    float fontSize = getFontSize();
+    float lineHeight = fontSize * 1.2f;
+    int lineStart = 0;
+    float lineStartX = 0;
+    int lastWordEnd = 0;
+    float lastWordEndX = 0;
+
+    for (size_t i = 0; i < text.length(); i++) {
+        float charEndX = charXOffsets[i];
+        float lineWidth = charEndX - lineStartX;
+
+        // Track word boundaries (space ends a word)
+        if (text[i] == ' ') {
+            lastWordEnd = i;
+            lastWordEndX = charEndX;
+        }
+
+        // Check if we need to wrap
+        if (lineWidth > maxWidth && i > static_cast<size_t>(lineStart)) {
+            LineInfo line;
+            line.yOffset = lines.size() * lineHeight;
+
+            // Try to break at word boundary
+            if (lastWordEnd > lineStart) {
+                line.startChar = lineStart;
+                line.endChar = lastWordEnd;
+                line.width = lastWordEndX - lineStartX;
+                lineStart = lastWordEnd + 1;  // Skip the space
+                lineStartX = (lineStart < (int)charXOffsets.size()) ?
+                    (lineStart > 0 ? charXOffsets[lineStart - 1] : 0) : charEndX;
+            } else {
+                // No word boundary - break at current char
+                line.startChar = lineStart;
+                line.endChar = i;
+                line.width = (i > 0 ? charXOffsets[i - 1] : 0) - lineStartX;
+                lineStart = i;
+                lineStartX = (i > 0) ? charXOffsets[i - 1] : 0;
+            }
+            lines.push_back(line);
+            lastWordEnd = lineStart;
+            lastWordEndX = lineStartX;
+        }
+    }
+
+    // Add final line
+    LineInfo line;
+    line.startChar = lineStart;
+    line.endChar = text.length();
+    line.yOffset = lines.size() * lineHeight;
+    line.width = charXOffsets.back() - lineStartX;
+    lines.push_back(line);
+}
+
+const std::vector<TextLayoutObject::LineInfo>& TextLayoutObject::getLines() const {
+    return lines;
+}
+
+int TextLayoutObject::getLineForChar(int charIndex) const {
+    for (size_t i = 0; i < lines.size(); i++) {
+        if (charIndex >= lines[i].startChar && charIndex < lines[i].endChar) {
+            return i;
+        }
+    }
+    // Return last line if at end
+    return lines.empty() ? 0 : lines.size() - 1;
+}
+
+float TextLayoutObject::getCharXOffsetInLine(int charIndex) const {
+    if (charXOffsets.empty() || lines.empty()) return 0;
+
+    int lineIdx = getLineForChar(charIndex);
+    int lineStart = lines[lineIdx].startChar;
+    float lineStartX = (lineStart > 0) ? charXOffsets[lineStart - 1] : 0;
+
+    if (charIndex <= 0) return 0;
+    if (charIndex > (int)charXOffsets.size()) charIndex = charXOffsets.size();
+
+    return charXOffsets[charIndex - 1] - lineStartX;
 }
 
 ImageLayoutObject::ImageLayoutObject(const MarkdownObject* sourceObject) 

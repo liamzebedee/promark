@@ -85,13 +85,23 @@ public:
         float height;
     };
 
+    struct LineInfo {
+        int startChar;
+        int endChar;
+        float yOffset;
+        float width;
+    };
+
     const std::vector<GlyphRun>& getGlyphRuns() const;
+    const std::vector<LineInfo>& getLines() const;
     float getFontSize() const override;
 
     // DOM position support
     int getDOMLength() const override;
     int getCharCount() const;
     float getCharXOffset(int index) const;  // Cumulative x offset after char at index
+    int getLineForChar(int charIndex) const;
+    float getCharXOffsetInLine(int charIndex) const;
 
     // FreeType face for glyph metrics
     void setFontFace(FT_Face face);
@@ -99,8 +109,11 @@ public:
 private:
     std::vector<GlyphRun> glyphRuns;
     std::vector<float> charXOffsets;  // Cumulative x offset for each character
+    std::vector<LineInfo> lines;
     FT_Face fontFace;
+    float availableWidth;
     void shapeText();
+    void wrapText(float maxWidth);
 };
 
 class ImageLayoutObject : public LayoutObject {
