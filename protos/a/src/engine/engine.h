@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include "markdown_renderer.h"
+#include "clipboard.h"
 
 class Engine {
 public:
@@ -68,4 +69,9 @@ private:
     void insertChar(char c);
     void deleteChar();
     void deleteWordBackward();
+
+    // Clipboard operations
+    void selectAll();
+    void copySelection();
+    void paste();
 };

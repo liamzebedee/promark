@@ -23,6 +23,22 @@ Visual feedback loop for C++/GLFW apps on macOS.
 
 ## Usage
 
+### Simple inline (preferred)
+
+Run this directly - no window ID detection, just captures full screen:
+
+```bash
+pkill -f <app_name> 2>/dev/null
+cd <project_dir> && make && ./<executable> &
+sleep 2
+screencapture -x /tmp/capture.png
+pkill -f <app_name> 2>/dev/null
+```
+
+Then read `/tmp/capture.png` to inspect.
+
+### Script-based
+
 ```bash
 bash scripts/capture_glfw_app.sh <project_dir> [output_image.png]
 ```
@@ -36,7 +52,7 @@ Arguments:
 1. Runs `make` in project directory
 2. Finds executable by parsing Makefile for TARGET/EXECUTABLE/BIN/APP variables, or falls back to finding most recently modified executable
 3. Launches app in background
-4. Waits 5 seconds or less for window to appear
+4. Waits up to 3 seconds for window to appear
 5. Captures window screenshot using `screencapture -l <windowID>`
 6. Kills the app
 7. Outputs the screenshot path

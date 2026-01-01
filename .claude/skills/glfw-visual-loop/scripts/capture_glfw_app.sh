@@ -2,7 +2,7 @@
 # Builds, runs, screenshots a GLFW app, then cleans up.
 # Usage: capture_glfw_app.sh <project_dir> [output_image_path]
 
-set -e
+set -ex
 
 PROJECT_DIR="${1:-.}"
 OUTPUT_PATH="${2:-/tmp/glfw_capture_$(date +%s).png}"
@@ -49,23 +49,23 @@ echo "Launched with PID: $APP_PID"
 
 # Wait for window to appear (poll for up to 5 seconds)
 echo "Waiting for window..."
-WINDOW_ID=""
-for i in {1..50}; do
-    sleep 0.1
-    # Get window ID using osascript - find window by PID
-    WINDOW_ID=$(osascript -e "
-        tell application \"System Events\"
-            set targetProcess to first process whose unix id is $APP_PID
-            if exists (window 1 of targetProcess) then
-                return id of window 1 of targetProcess
-            end if
-        end tell
-    " 2>/dev/null || true)
+# WINDOW_ID=""
+# for i in {1..5}; do
+#     sleep 1
+#     # Get window ID using osascript - find window by PID
+#     WINDOW_ID=$(osascript -e "
+#         tell application \"System Events\"
+#             set targetProcess to first process whose unix id is $APP_PID
+#             if exists (window 1 of targetProcess) then
+#                 return id of window 1 of targetProcess
+#             end if
+#         end tell
+#     " 2>/dev/null || true)
     
-    if [[ -n "$WINDOW_ID" ]]; then
-        break
-    fi
-done
+#     if [[ -n "$WINDOW_ID" ]]; then
+#         break
+#     fi
+# done
 
 # Alternative: try getting window by looking for GLFW windows
 if [[ -z "$WINDOW_ID" ]]; then
@@ -83,7 +83,7 @@ fi
 
 if [[ -z "$WINDOW_ID" ]]; then
     echo "Warning: Could not get window ID, capturing full screen" >&2
-    sleep 0.5
+    sleep 1
     screencapture -x "$OUTPUT_PATH"
 else
     echo "Capturing window ID: $WINDOW_ID"
@@ -91,15 +91,13 @@ else
 fi
 
 
-SIZE=$(stat -f%z "$OUT")
+SIZE=$(stat -f%z "$OUTPUT_PATH")
 if [ "$SIZE" -gt 1000000 ]; then
-  NEW_OUT="${OUT%.*}.jpg"
-  sips -s format jpeg -s formatOptions 65 "$OUT" --out "$NEW_OUT" >/dev/null
-  rm "$OUT"
-  OUT="$NEW_OUT"
+  NEW_OUT="${OUTPUT_PATH%.*}.jpg"
+  sips -s format jpeg -s formatOptions 65 "$OUTPUT_PATH" --out "$NEW_OUT" >/dev/null
+  rm "$OUTPUT_PATH"
+  OUTPUT_PATH="$NEW_OUT"
 fi
-
-OUTPUT_PATH="$OUT"
 
 # Cleanup
 kill $APP_PID 2>/dev/null || true

@@ -29,6 +29,7 @@ TARGET = $(BUILD_DIR)/mdeditor
 SOURCES = $(SRC_DIR)/main.cpp \
 	$(SRC_DIR)/engine/engine.cpp \
 	$(SRC_DIR)/engine/text_buffer.cpp \
+	$(SRC_DIR)/engine/clipboard.cpp \
 	$(SRC_DIR)/engine/markdown_objects.cpp \
 	$(SRC_DIR)/engine/markdown_parser.cpp \
 	$(SRC_DIR)/engine/layout_objects.cpp \

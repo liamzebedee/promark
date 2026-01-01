@@ -121,7 +121,23 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
         bool shift = mods & GLFW_MOD_SHIFT;
         bool alt = mods & GLFW_MOD_ALT;
-        
+        // Platform-agnostic: CMD on macOS, CTRL on Windows/Linux
+        bool cmdOrCtrl = (mods & GLFW_MOD_SUPER) || (mods & GLFW_MOD_CONTROL);
+
+        // Handle keyboard shortcuts (Ctrl/Cmd + key)
+        if (cmdOrCtrl) {
+            if (key == GLFW_KEY_A) {
+                selectAll();
+                return;
+            } else if (key == GLFW_KEY_C) {
+                copySelection();
+                return;
+            } else if (key == GLFW_KEY_V) {
+                paste();
+                return;
+            }
+        }
+
         if (key == GLFW_KEY_ESCAPE) {
             glfwSetWindowShouldClose(glfwGetCurrentContext(), GLFW_TRUE);
             
@@ -551,5 +567,56 @@ void Engine::moveCursorVertically(int direction, bool extendSelection) {
     }
 
     cursorPos = newPos;
+}
+
+void Engine::selectAll() {
+    selectionStart = 0;
+    selectionEnd = inputLength;
+    cursorPos = inputLength;
+    hasSelection = (inputLength > 0);
+}
+
+void Engine::copySelection() {
+    if (!hasSelection) {
+        return;
+    }
+
+    int start = std::min(selectionStart, selectionEnd);
+    int end = std::max(selectionStart, selectionEnd);
+    std::string selectedText(inputBuffer + start, end - start);
+    Clipboard::setText(selectedText);
+}
+
+void Engine::paste() {
+    std::string clipboardText = Clipboard::getText();
+    if (clipboardText.empty()) {
+        return;
+    }
+
+    // Delete selection if present
+    if (hasSelection) {
+        int start = std::min(selectionStart, selectionEnd);
+        int end = std::max(selectionStart, selectionEnd);
+        memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
+        inputLength -= (end - start);
+        cursorPos = start;
+        hasSelection = false;
+    }
+
+    // Insert clipboard text
+    int pasteLen = clipboardText.length();
+    if (inputLength + pasteLen < sizeof(inputBuffer) - 1) {
+        memmove(inputBuffer + cursorPos + pasteLen, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+        memcpy(inputBuffer + cursorPos, clipboardText.c_str(), pasteLen);
+        inputLength += pasteLen;
+        cursorPos += pasteLen;
+
+        // Update markdown content
+        if (textBuffer && markdownRenderer) {
+            std::string newText(inputBuffer, inputLength);
+            textBuffer->setText(newText);
+            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+        }
+    }
 }
 
