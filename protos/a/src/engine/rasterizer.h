@@ -6,13 +6,24 @@
 #include FT_FREETYPE_H
 #include <jpeglib.h>
 
-struct Glyph {
+struct GlyphInfo {
     unsigned int textureID;
     int width;
     int height;
     int bearingX;
     int bearingY;
     int advance;
+};
+
+// Key for glyph cache: character + font size
+struct GlyphKey {
+    char character;
+    int fontSize;
+
+    bool operator<(const GlyphKey& other) const {
+        if (character != other.character) return character < other.character;
+        return fontSize < other.fontSize;
+    }
 };
 
 class Rasterizer {
@@ -60,4 +71,9 @@ private:
     bool loadFont(const char* fontPath);
     void renderChar(char c, float x, float y, const Color& color);
     void renderText(const std::string& text, float x, float y, const Color& color);
+
+    // Glyph caching
+    std::map<GlyphKey, GlyphInfo> glyphCache;
+    const GlyphInfo* getGlyph(char c, int fontSize);
+    int currentFontSize;
 };

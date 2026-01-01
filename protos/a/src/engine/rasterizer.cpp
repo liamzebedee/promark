@@ -3,18 +3,25 @@
 #include <map>
 #include <iostream>
 
-Rasterizer::Rasterizer() : hasClip(false), fontLoaded(false) {
+Rasterizer::Rasterizer() : hasClip(false), fontLoaded(false), currentFontSize(0) {
     initializeFont();
 }
 
 Rasterizer::~Rasterizer() {
-    // Clean up any cached textures
+    // Clean up any cached image textures
     for (auto& pair : imageCache) {
         if (pair.second.textureId != 0) {
             glDeleteTextures(1, &pair.second.textureId);
         }
     }
-    
+
+    // Clean up cached glyph textures
+    for (auto& pair : glyphCache) {
+        if (pair.second.textureID != 0) {
+            glDeleteTextures(1, &pair.second.textureID);
+        }
+    }
+
     // Clean up FreeType font resources
     if (fontLoaded) {
         FT_Done_Face(face);
@@ -79,10 +86,13 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
     const Point& position = op.getPosition();
     const std::string& text = op.getText();
     const Color& color = op.getColor();
-    float fontSize = op.getFontSize();
+    int fontSize = static_cast<int>(op.getFontSize());
 
-    // Set font size
-    FT_Set_Pixel_Sizes(face, 0, (int)fontSize);
+    // Set font size for glyph cache lookup
+    if (fontSize != currentFontSize) {
+        FT_Set_Pixel_Sizes(face, 0, fontSize);
+        currentFontSize = fontSize;
+    }
 
     // position.y is the baseline
     renderText(text, position.x, position.y, color);
@@ -379,11 +389,61 @@ bool Rasterizer::loadFont(const char* fontPath) {
     if (FT_New_Face(ft, fontPath, 0, &face)) {
         return false;
     }
-    
+
     fontLoaded = true;
     return true;
 }
 
+const GlyphInfo* Rasterizer::getGlyph(char c, int fontSize) {
+    GlyphKey key{c, fontSize};
+
+    // Check cache
+    auto it = glyphCache.find(key);
+    if (it != glyphCache.end()) {
+        return &it->second;
+    }
+
+    // Set font size if changed
+    if (fontSize != currentFontSize) {
+        FT_Set_Pixel_Sizes(face, 0, fontSize);
+        currentFontSize = fontSize;
+    }
+
+    // Load glyph
+    if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
+        return nullptr;
+    }
+
+    FT_GlyphSlot g = face->glyph;
+
+    GlyphInfo info;
+    info.width = g->bitmap.width;
+    info.height = g->bitmap.rows;
+    info.bearingX = g->bitmap_left;
+    info.bearingY = g->bitmap_top;
+    info.advance = g->advance.x >> 6;
+    info.textureID = 0;
+
+    // Create texture only if glyph has bitmap data
+    if (g->bitmap.width > 0 && g->bitmap.rows > 0) {
+        glGenTextures(1, &info.textureID);
+        glBindTexture(GL_TEXTURE_2D, info.textureID);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA,
+                     g->bitmap.width, g->bitmap.rows,
+                     0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+
+    glyphCache[key] = info;
+    return &glyphCache[key];
+}
 
 void Rasterizer::renderChar(char c, float x, float y, const Color& color) {
     // Load glyph
@@ -444,45 +504,31 @@ void Rasterizer::renderText(const std::string& text, float x, float y, const Col
     float penX = std::round(x);
     float baseline = std::round(y);
 
+    // Enable blending once for all characters
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D);
+    glColor4ub(color.r, color.g, color.b, color.a);
+
     for (char c : text) {
         if (c == '\n') {
             continue;  // Newlines handled by layout
         }
 
-        // Load glyph to get metrics and render
-        if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
+        // Get cached glyph
+        const GlyphInfo* glyph = getGlyph(c, currentFontSize);
+        if (!glyph) {
             continue;
         }
 
-        FT_GlyphSlot g = face->glyph;
+        // Render if glyph has a texture
+        if (glyph->textureID != 0) {
+            float xpos = std::round(penX + glyph->bearingX);
+            float ypos = std::round(baseline - glyph->bearingY);
+            float w = glyph->width;
+            float h = glyph->height;
 
-        // Render if glyph has a bitmap
-        if (g->bitmap.width > 0 && g->bitmap.rows > 0) {
-            // Create texture
-            unsigned int texture;
-            glGenTextures(1, &texture);
-            glBindTexture(GL_TEXTURE_2D, texture);
-            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA,
-                         g->bitmap.width, g->bitmap.rows,
-                         0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
-
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-            // Calculate position (round to avoid subpixel jitter)
-            float xpos = std::round(penX + g->bitmap_left);
-            float ypos = std::round(baseline - g->bitmap_top);
-            float w = g->bitmap.width;
-            float h = g->bitmap.rows;
-
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            glEnable(GL_TEXTURE_2D);
-            glColor4ub(color.r, color.g, color.b, color.a);
+            glBindTexture(GL_TEXTURE_2D, glyph->textureID);
 
             glBegin(GL_QUADS);
                 glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos,     ypos);
@@ -490,15 +536,15 @@ void Rasterizer::renderText(const std::string& text, float x, float y, const Col
                 glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);
                 glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos,     ypos + h);
             glEnd();
-
-            glDisable(GL_TEXTURE_2D);
-            glDisable(GL_BLEND);
-            glDeleteTextures(1, &texture);
         }
 
         // Advance pen position
-        penX += g->advance.x >> 6;
+        penX += glyph->advance;
     }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
 }
 
 void Rasterizer::executeDrawDebugBorder(const DrawDebugBorderOp& op) {

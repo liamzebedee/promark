@@ -114,19 +114,55 @@ bool Engine::initialize() {
 void Engine::render(int width, int height) {
     viewportHeight = height;
 
-    // Simple momentum scrolling
+    // macOS-style momentum scrolling
     float maxScroll = std::max(0.0f, contentHeight - height);
 
-    scrollVelocity *= 0.9f;
-    scrollOffset += scrollVelocity;
-
-    // Hard clamp
-    if (scrollOffset < 0) {
-        scrollOffset = 0;
+    // Natural deceleration: friction increases as velocity decreases
+    float absVel = std::abs(scrollVelocity);
+    float friction;
+    if (absVel > 50.0f) {
+        friction = 0.95f;  // High speed: gentle friction
+    } else if (absVel > 10.0f) {
+        friction = 0.92f;  // Medium speed: moderate friction
+    } else if (absVel > 1.0f) {
+        friction = 0.85f;  // Low speed: stronger friction
+    } else {
+        friction = 0.0f;   // Stop completely when very slow
         scrollVelocity = 0;
     }
-    if (scrollOffset > maxScroll) {
-        scrollOffset = maxScroll;
+    scrollVelocity *= friction;
+    scrollOffset += scrollVelocity;
+
+    // Rubber-banding at edges
+    float overscrollTop = -scrollOffset;
+    float overscrollBottom = scrollOffset - maxScroll;
+
+    if (overscrollTop > 0) {
+        // Overscrolled past top - spring back
+        float springForce = overscrollTop * 0.15f;
+        scrollVelocity += springForce;
+        // Dampen velocity when overscrolled
+        if (scrollVelocity < 0) {
+            scrollVelocity *= 0.7f;
+        }
+    } else if (overscrollBottom > 0) {
+        // Overscrolled past bottom - spring back
+        float springForce = overscrollBottom * 0.15f;
+        scrollVelocity -= springForce;
+        // Dampen velocity when overscrolled
+        if (scrollVelocity > 0) {
+            scrollVelocity *= 0.7f;
+        }
+    }
+
+    // Soft clamp - allow slight overscroll but limit it
+    float maxOverscroll = 100.0f;
+    if (scrollOffset < -maxOverscroll) {
+        scrollOffset = -maxOverscroll;
+        scrollVelocity = 0;
+    }
+    if (scrollOffset > maxScroll + maxOverscroll) {
+        scrollOffset = maxScroll + maxOverscroll;
         scrollVelocity = 0;
     }
 
@@ -485,7 +521,8 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
 
 void Engine::handleScroll(double xoffset, double yoffset) {
     (void)xoffset;
-    scrollVelocity += -yoffset * 15.0f;
+    // Lower multiplier for less sensitive scrolling (macOS-like feel)
+    scrollVelocity += -yoffset * 6.0f;
 }
 
 void Engine::handleMouse(int button, int action, int mods, double x, double y) {
