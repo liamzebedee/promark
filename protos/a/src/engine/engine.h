@@ -31,13 +31,16 @@ public:
     std::string getContent() const;
     bool isDirty() const { return dirty; }
     void markClean() { dirty = false; }
+    bool shouldClose() const { return wantsToClose; }
 
 private:
+    bool wantsToClose;
     bool leftMouseHeld;
     bool dirty;
     double lastClickTime;
     double lastClickX;
     double lastClickY;
+    int clickCount;  // 1=single, 2=double, 3=triple
     float scrollOffset;
     float scrollVelocity;
     float contentHeight;
@@ -60,6 +63,7 @@ private:
     // FreeType font system
     FT_Library ft;
     FT_Face face;
+    FT_Face monoFace;
     bool fontLoaded;
     
     struct Glyph {
@@ -110,6 +114,16 @@ private:
     static const int MAX_UNDO = 100;
     void saveUndoState();
     void undo();
+
+    // Toolbar
+    static const int TOOLBAR_HEIGHT = 40;
+    void renderToolbar(int width);
+    bool handleToolbarClick(double x, double y);
+    void applyBold();
+    void applyItalic();
+    void applyHeading(int level);
+    void applyLink();
+    void wrapSelection(const std::string& before, const std::string& after);
 
     // Cursor animation
     float caretAnimX;

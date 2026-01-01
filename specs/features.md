@@ -27,7 +27,15 @@
 - formatting
     - links render
     - blockquotes render
+
+
+
+
 - BUILT-IN MARKDOWN TABLE EDITING SUPPORT
+- frontmatter
+    - add support for frontmatter parsing (---). render it as a code block in plaintext. add support for code blocks ```. they are fixed-width. use a nice fixed-width font. use a gray background with black text. only a small amount of margin.
+
+
 
 
 

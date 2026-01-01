@@ -5,9 +5,10 @@
 #include <iostream>
 
 Rasterizer::Rasterizer() : hasClip(false), faceRegular(nullptr), faceBold(nullptr),
-    faceItalic(nullptr), faceBoldItalic(nullptr), fontLoaded(false),
-    currentFontSize(0), currentStyle(TextStyle::Normal) {
+    faceItalic(nullptr), faceBoldItalic(nullptr), faceMono(nullptr), fontLoaded(false),
+    currentFontSize(0), currentStyle(TextStyle::Normal), currentMonospace(false) {
     initializeFont();
+    loadMonoFont();
 }
 
 Rasterizer::~Rasterizer() {
@@ -31,6 +32,7 @@ Rasterizer::~Rasterizer() {
         if (faceBold) FT_Done_Face(faceBold);
         if (faceItalic) FT_Done_Face(faceItalic);
         if (faceBoldItalic) FT_Done_Face(faceBoldItalic);
+        if (faceMono) FT_Done_Face(faceMono);
         FT_Done_FreeType(ft);
     }
 }
@@ -97,17 +99,19 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
     const Color& color = op.getColor();
     int fontSize = static_cast<int>(op.getFontSize());
     TextStyle style = op.getStyle();
+    bool monospace = op.isMonospace();
 
     // Set font size for glyph cache lookup
-    FT_Face face = getFaceForStyle(style);
-    if (face && (fontSize != currentFontSize || style != currentStyle)) {
+    FT_Face face = getFaceForStyle(style, monospace);
+    if (face && (fontSize != currentFontSize || style != currentStyle || monospace != currentMonospace)) {
         FT_Set_Pixel_Sizes(face, 0, fontSize);
         currentFontSize = fontSize;
         currentStyle = style;
+        currentMonospace = monospace;
     }
 
     // position.y is the baseline
-    renderText(text, position.x, position.y, color, style);
+    renderText(text, position.x, position.y, color, style, monospace);
 }
 
 void Rasterizer::executeDrawImage(const DrawImageOp& op) {
@@ -435,8 +439,33 @@ bool Rasterizer::loadFontFamily(const char* fontPath) {
     return true;
 }
 
-FT_Face Rasterizer::getFaceForStyle(TextStyle style) {
+bool Rasterizer::loadMonoFont() {
+    const char* monoFontPaths[] = {
+        "/System/Library/Fonts/Menlo.ttc",
+        "/System/Library/Fonts/Monaco.dfont",
+        "/System/Library/Fonts/Courier.dfont",
+        "/Library/Fonts/Courier New.ttf"
+    };
+
+    for (const char* monoPath : monoFontPaths) {
+        if (loadFont(monoPath, 0, &faceMono)) {
+            std::cout << "Rasterizer loaded mono font: " << monoPath << std::endl;
+            return true;
+        }
+    }
+
+    std::cerr << "Failed to load monospace font, using regular" << std::endl;
+    faceMono = faceRegular;  // Fallback
+    return false;
+}
+
+FT_Face Rasterizer::getFaceForStyle(TextStyle style, bool monospace) {
     if (!fontLoaded) return nullptr;
+
+    // Use monospace font for code blocks
+    if (monospace && faceMono) {
+        return faceMono;
+    }
 
     if (hasStyle(style, TextStyle::Bold) && hasStyle(style, TextStyle::Italic)) {
         return faceBoldItalic;
@@ -448,8 +477,8 @@ FT_Face Rasterizer::getFaceForStyle(TextStyle style) {
     return faceRegular;
 }
 
-const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize, TextStyle style) {
-    GlyphKey key{codepoint, fontSize, static_cast<uint8_t>(style)};
+const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize, TextStyle style, bool monospace) {
+    GlyphKey key{codepoint, fontSize, static_cast<uint8_t>(style), monospace};
 
     // Check cache
     auto it = glyphCache.find(key);
@@ -458,14 +487,15 @@ const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize, TextStyl
     }
 
     // Get the appropriate font face for this style
-    FT_Face face = getFaceForStyle(style);
+    FT_Face face = getFaceForStyle(style, monospace);
     if (!face) return nullptr;
 
     // Set font size if changed
-    if (fontSize != currentFontSize || style != currentStyle) {
+    if (fontSize != currentFontSize || style != currentStyle || monospace != currentMonospace) {
         FT_Set_Pixel_Sizes(face, 0, fontSize);
         currentFontSize = fontSize;
         currentStyle = style;
+        currentMonospace = monospace;
     }
 
     // Load glyph using Unicode code point
@@ -559,7 +589,7 @@ void Rasterizer::renderCodepoint(uint32_t codepoint, float x, float y, const Col
     glDeleteTextures(1, &texture);
 }
 
-void Rasterizer::renderText(const std::string& text, float x, float y, const Color& color, TextStyle style) {
+void Rasterizer::renderText(const std::string& text, float x, float y, const Color& color, TextStyle style, bool monospace) {
     // Round baseline to integer to ensure consistent glyph positioning
     float penX = std::round(x);
     float baseline = std::round(y);
@@ -579,8 +609,8 @@ void Rasterizer::renderText(const std::string& text, float x, float y, const Col
             continue;  // Newlines handled by layout
         }
 
-        // Get cached glyph with style
-        const GlyphInfo* glyph = getGlyph(codepoint, currentFontSize, style);
+        // Get cached glyph with style and monospace flag
+        const GlyphInfo* glyph = getGlyph(codepoint, currentFontSize, style, monospace);
         if (!glyph) {
             continue;
         }

@@ -23,9 +23,9 @@ const Color& DrawRectOp::getColor() const {
 }
 
 DrawTextOp::DrawTextOp(const Point& position, const std::string& text, const Color& color,
-                       float fontSize, TextStyle style)
+                       float fontSize, TextStyle style, bool monospace)
     : PaintOp(PaintOpType::DrawText), position(position), text(text), color(color),
-      fontSize(fontSize), style(style) {
+      fontSize(fontSize), style(style), monospace(monospace) {
 }
 
 const Point& DrawTextOp::getPosition() const {
@@ -46,6 +46,10 @@ float DrawTextOp::getFontSize() const {
 
 TextStyle DrawTextOp::getStyle() const {
     return style;
+}
+
+bool DrawTextOp::isMonospace() const {
+    return monospace;
 }
 
 DrawImageOp::DrawImageOp(const Rect& destRect, const std::string& imagePath) 

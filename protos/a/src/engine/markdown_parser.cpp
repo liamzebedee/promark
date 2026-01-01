@@ -157,6 +157,70 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string&
             continue;
         }
 
+        // Check for code block (```)
+        if (line.length() >= 3 && line[0] == '`' && line[1] == '`' && line[2] == '`') {
+            // Extract optional language identifier
+            std::string language = line.substr(3);
+            // Trim whitespace
+            size_t start = language.find_first_not_of(" \t");
+            size_t end = language.find_last_not_of(" \t");
+            if (start != std::string::npos) {
+                language = language.substr(start, end - start + 1);
+            } else {
+                language = "";
+            }
+
+            // Find closing ```
+            size_t codeStart = nextLineStart;
+            size_t codeEnd = codeStart;
+            size_t closingLineEnd = codeStart;
+
+            while (codeEnd < textLen) {
+                // Find end of current line
+                size_t scanLineStart = codeEnd;
+                size_t scanLineEnd = codeEnd;
+                while (scanLineEnd < textLen && text[scanLineEnd] != '\n') {
+                    scanLineEnd++;
+                }
+
+                std::string scanLine = text.substr(scanLineStart, scanLineEnd - scanLineStart);
+
+                // Check if this is the closing ```
+                if (scanLine.length() >= 3 && scanLine[0] == '`' && scanLine[1] == '`' && scanLine[2] == '`') {
+                    closingLineEnd = (scanLineEnd < textLen) ? scanLineEnd + 1 : scanLineEnd;
+                    break;
+                }
+
+                codeEnd = (scanLineEnd < textLen) ? scanLineEnd + 1 : scanLineEnd;
+                closingLineEnd = codeEnd;
+            }
+
+            // Extract code content (without trailing newline before closing ```)
+            std::string codeContent;
+            if (codeEnd > codeStart) {
+                codeContent = text.substr(codeStart, codeEnd - codeStart);
+                // Remove trailing newline if present
+                if (!codeContent.empty() && codeContent.back() == '\n') {
+                    codeContent.pop_back();
+                }
+            }
+
+            auto codeBlock = std::make_unique<CodeBlockObject>(language);
+            codeBlock->setCode(codeContent);
+            codeBlock->setRawRange(static_cast<int>(lineStart), static_cast<int>(closingLineEnd));
+
+            // Add a text child for layout purposes
+            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+            textNode->setText(codeContent);
+            textNode->setRawRange(static_cast<int>(codeStart), static_cast<int>(codeEnd));
+            textNode->setTextOffset(0);
+            codeBlock->addChild(std::move(textNode));
+
+            document->addChild(std::move(codeBlock));
+            pos = closingLineEnd;
+            continue;
+        }
+
         // Check if line is a heading
         if (line[0] == '#') {
             int level = 0;

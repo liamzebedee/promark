@@ -16,16 +16,18 @@ struct GlyphInfo {
     int advance;
 };
 
-// Key for glyph cache: Unicode code point + font size + style
+// Key for glyph cache: Unicode code point + font size + style + monospace
 struct GlyphKey {
     uint32_t codepoint;
     int fontSize;
     uint8_t style;  // TextStyle as uint8_t
+    bool monospace;
 
     bool operator<(const GlyphKey& other) const {
         if (codepoint != other.codepoint) return codepoint < other.codepoint;
         if (fontSize != other.fontSize) return fontSize < other.fontSize;
-        return style < other.style;
+        if (style != other.style) return style < other.style;
+        return monospace < other.monospace;
     }
 };
 
@@ -72,18 +74,21 @@ private:
     FT_Face faceBold;
     FT_Face faceItalic;
     FT_Face faceBoldItalic;
+    FT_Face faceMono;
     bool fontLoaded;
 
     // Font rendering
     bool loadFont(const char* fontPath, int faceIndex, FT_Face* outFace);
     bool loadFontFamily(const char* fontPath);
+    bool loadMonoFont();
     void renderCodepoint(uint32_t codepoint, float x, float y, const Color& color);
-    void renderText(const std::string& text, float x, float y, const Color& color, TextStyle style);
-    FT_Face getFaceForStyle(TextStyle style);
+    void renderText(const std::string& text, float x, float y, const Color& color, TextStyle style, bool monospace);
+    FT_Face getFaceForStyle(TextStyle style, bool monospace);
 
     // Glyph caching
     std::map<GlyphKey, GlyphInfo> glyphCache;
-    const GlyphInfo* getGlyph(uint32_t codepoint, int fontSize, TextStyle style);
+    const GlyphInfo* getGlyph(uint32_t codepoint, int fontSize, TextStyle style, bool monospace);
     int currentFontSize;
     TextStyle currentStyle;
+    bool currentMonospace;
 };

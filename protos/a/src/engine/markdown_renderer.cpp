@@ -29,6 +29,12 @@ void MarkdownRenderer::setFontFace(FT_Face face) {
     needsRepaint = true;
 }
 
+void MarkdownRenderer::setMonoFontFace(FT_Face face) {
+    layoutEngine->setMonoFontFace(face);
+    needsRelayout = true;
+    needsRepaint = true;
+}
+
 void MarkdownRenderer::render(const Size& viewportSize) {
     if (needsReparse) {
         parseMarkdown();

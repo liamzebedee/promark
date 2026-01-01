@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cmath>
 
-Engine::Engine() : leftMouseHeld(false), dirty(false), lastClickTime(0), lastClickX(0), lastClickY(0),
+Engine::Engine() : wantsToClose(false), leftMouseHeld(false), dirty(false), lastClickTime(0), lastClickX(0), lastClickY(0), clickCount(0),
                    scrollOffset(0.0f), scrollVelocity(0.0f),
                    contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
                    fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
@@ -52,6 +52,9 @@ Engine::~Engine() {
 
     if (fontLoaded) {
         FT_Done_Face(face);
+        if (monoFace) {
+            FT_Done_Face(monoFace);
+        }
         FT_Done_FreeType(ft);
     }
 
@@ -98,8 +101,28 @@ bool Engine::initialize() {
         return false;
     }
 
-    // Pass font face to markdown renderer for glyph metrics
+    // Load monospace font for code blocks
+    const char* monoFontPaths[] = {
+        "/System/Library/Fonts/Menlo.ttc",
+        "/System/Library/Fonts/Monaco.dfont",
+        "/System/Library/Fonts/Courier.dfont",
+        "/Library/Fonts/Courier New.ttf"
+    };
+
+    monoFace = nullptr;
+    for (const char* monoPath : monoFontPaths) {
+        if (FT_New_Face(ft, monoPath, 0, &monoFace) == 0) {
+            FT_Set_Pixel_Sizes(monoFace, 0, 24);
+            std::cout << "Loaded mono font: " << monoPath << std::endl;
+            break;
+        }
+    }
+
+    // Pass font faces to markdown renderer for glyph metrics
     markdownRenderer->setFontFace(face);
+    if (monoFace) {
+        markdownRenderer->setMonoFontFace(monoFace);
+    }
 
     // Test basic OpenGL functionality
     GLenum error = glGetError();
@@ -113,10 +136,11 @@ bool Engine::initialize() {
 }
 
 void Engine::render(int width, int height) {
-    viewportHeight = height;
+    viewportHeight = height - TOOLBAR_HEIGHT;
+    int contentAreaHeight = height - TOOLBAR_HEIGHT;
 
     // macOS-style momentum scrolling
-    float maxScroll = std::max(0.0f, contentHeight - height);
+    float maxScroll = std::max(0.0f, contentHeight - contentAreaHeight);
 
     // Natural deceleration: friction increases as velocity decreases
     float absVel = std::abs(scrollVelocity);
@@ -177,8 +201,15 @@ void Engine::render(int width, int height) {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // Apply scroll offset
-    glTranslatef(0, -scrollOffset, 0);
+    // Render toolbar at top (fixed position)
+    renderToolbar(width);
+
+    // Set up clipping for content area (below toolbar)
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, width, height - TOOLBAR_HEIGHT);
+
+    // Apply scroll offset and toolbar offset
+    glTranslatef(0, TOOLBAR_HEIGHT - scrollOffset, 0);
 
     if (markdownRenderer) {
         int domCursorPos = markdownRenderer->rawToDOM(cursorPos);
@@ -203,7 +234,7 @@ void Engine::render(int width, int height) {
         caret.useAnimatedPosition = true;
         markdownRenderer->setCaretState(caret);
 
-        Size viewportSize(width, height);
+        Size viewportSize(width, contentAreaHeight);
         markdownRenderer->render(viewportSize);
 
         contentHeight = markdownRenderer->getContentHeight();
@@ -212,18 +243,22 @@ void Engine::render(int width, int height) {
         updateCaretAnimation();
     }
 
+    // Disable scissor test before drawing fixed UI elements
+    glDisable(GL_SCISSOR_TEST);
+
     // Reset transform for scrollbar (fixed position UI)
     glLoadIdentity();
 
-    // Draw scrollbar if content is taller than viewport
-    if (contentHeight > height) {
+    // Draw scrollbar if content is taller than content area
+    if (contentHeight > contentAreaHeight) {
         float scrollbarWidth = 7.0f;
         float margin = 3.0f;
         float trackX = width - scrollbarWidth - margin;
-        float trackHeight = height - margin * 2;
+        float trackTop = TOOLBAR_HEIGHT + margin;
+        float trackHeight = height - TOOLBAR_HEIGHT - margin * 2;
 
         // Thumb size - shrinks when overscrolling
-        float visibleRatio = (float)height / contentHeight;
+        float visibleRatio = (float)contentAreaHeight / contentHeight;
         float baseThumbHeight = std::max(40.0f, trackHeight * visibleRatio);
         float thumbHeight = baseThumbHeight;
 
@@ -240,12 +275,12 @@ void Engine::render(int width, int height) {
         float thumbY;
         if (scrollRatio < 0) {
             // Overscrolled past top - thumb stays at top but shrinks
-            thumbY = margin;
+            thumbY = trackTop;
         } else if (scrollRatio > 1) {
             // Overscrolled past bottom - thumb stays at bottom
-            thumbY = margin + trackHeight - thumbHeight;
+            thumbY = trackTop + trackHeight - thumbHeight;
         } else {
-            thumbY = margin + scrollRatio * (trackHeight - thumbHeight);
+            thumbY = trackTop + scrollRatio * (trackHeight - thumbHeight);
         }
 
         glDisable(GL_TEXTURE_2D);
@@ -291,7 +326,10 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
 
         // Handle keyboard shortcuts (Ctrl/Cmd + key)
         if (cmdOrCtrl) {
-            if (key == GLFW_KEY_A) {
+            if (key == GLFW_KEY_W) {
+                wantsToClose = true;
+                return;
+            } else if (key == GLFW_KEY_A) {
                 selectAll();
                 return;
             } else if (key == GLFW_KEY_C) {
@@ -531,10 +569,15 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
 
     if (button == GLFW_MOUSE_BUTTON_LEFT) {
         if (action == GLFW_PRESS) {
+            // Check toolbar click first
+            if (handleToolbarClick(x, y)) {
+                return;
+            }
+
             leftMouseHeld = true;
             if (markdownRenderer) {
-                // Add scroll offset to get content-space y coordinate
-                float contentY = static_cast<float>(y) + scrollOffset;
+                // Adjust y for toolbar and add scroll offset to get content-space y coordinate
+                float contentY = static_cast<float>(y - TOOLBAR_HEIGHT) + scrollOffset;
 
                 // Check if clicking on a link
                 std::string linkUrl = markdownRenderer->getLinkAtPosition(static_cast<float>(x), contentY);
@@ -545,16 +588,35 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                     return;
                 }
 
-                // Detect double-click (within 400ms and 5 pixels)
+                // Detect multi-click (within 400ms and 5 pixels)
                 double currentTime = glfwGetTime();
-                bool isDoubleClick = (currentTime - lastClickTime < 0.4) &&
-                                     (std::abs(x - lastClickX) < 5) &&
-                                     (std::abs(y - lastClickY) < 5);
+                bool isMultiClick = (currentTime - lastClickTime < 0.4) &&
+                                    (std::abs(x - lastClickX) < 5) &&
+                                    (std::abs(y - lastClickY) < 5);
+
+                if (isMultiClick) {
+                    clickCount = (clickCount % 3) + 1;  // Cycle 1->2->3->1
+                } else {
+                    clickCount = 1;
+                }
 
                 cursorPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
                 cursorPos = std::max(0, std::min(cursorPos, inputLength));
 
-                if (isDoubleClick) {
+                if (clickCount == 3) {
+                    // Triple-click: select line
+                    int lineStart = findLineStart(cursorPos);
+                    int lineEnd = findLineEnd(cursorPos);
+                    // Include the newline if present
+                    if (lineEnd < inputLength && inputBuffer[lineEnd] == '\n') {
+                        lineEnd++;
+                    }
+                    selectionStart = lineStart;
+                    selectionEnd = lineEnd;
+                    cursorPos = lineEnd;
+                    hasSelection = (selectionStart != selectionEnd);
+                    leftMouseHeld = false;  // Don't drag after triple-click
+                } else if (clickCount == 2) {
                     // Double-click: select word
                     int wordStart = findWordBoundary(cursorPos, -1);
                     int wordEnd = findWordBoundary(cursorPos, 1);
@@ -589,7 +651,8 @@ void Engine::openUrl(const std::string& url) {
 
 void Engine::handleMouseMove(double x, double y) {
     if (leftMouseHeld && markdownRenderer) {
-        float contentY = static_cast<float>(y) + scrollOffset;
+        // Adjust y for toolbar and add scroll offset
+        float contentY = static_cast<float>(y - TOOLBAR_HEIGHT) + scrollOffset;
         int newPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
         newPos = std::max(0, std::min(newPos, inputLength));
         cursorPos = newPos;
@@ -600,7 +663,8 @@ void Engine::handleMouseMove(double x, double y) {
 
 bool Engine::isOverLink(double x, double y) {
     if (!markdownRenderer) return false;
-    float contentY = static_cast<float>(y) + scrollOffset;
+    // Adjust y for toolbar and add scroll offset
+    float contentY = static_cast<float>(y - TOOLBAR_HEIGHT) + scrollOffset;
     std::string url = markdownRenderer->getLinkAtPosition(static_cast<float>(x), contentY);
     return !url.empty();
 }
@@ -1073,5 +1137,339 @@ void Engine::undo() {
     // Reset blink
     lastBlinkTime = glfwGetTime();
     caretVisible = true;
+}
+
+void Engine::renderToolbar(int width) {
+    glDisable(GL_TEXTURE_2D);
+
+    // Draw toolbar background (light gray)
+    glColor3f(0.95f, 0.95f, 0.95f);
+    glBegin(GL_QUADS);
+    glVertex2f(0, 0);
+    glVertex2f(width, 0);
+    glVertex2f(width, TOOLBAR_HEIGHT);
+    glVertex2f(0, TOOLBAR_HEIGHT);
+    glEnd();
+
+    // Draw bottom border
+    glColor3f(0.8f, 0.8f, 0.8f);
+    glBegin(GL_LINES);
+    glVertex2f(0, TOOLBAR_HEIGHT);
+    glVertex2f(width, TOOLBAR_HEIGHT);
+    glEnd();
+
+    // Button definitions: x position, width, label
+    struct Button {
+        float x;
+        float w;
+        const char* label;
+    };
+
+    float buttonHeight = 26.0f;
+    float buttonY = (TOOLBAR_HEIGHT - buttonHeight) / 2.0f;
+    float startX = 10.0f;
+    float spacing = 8.0f;
+
+    Button buttons[] = {
+        {startX, 30, "B"},           // Bold
+        {0, 24, "I"},                // Italic
+        {0, 36, "H1"},               // Heading 1
+        {0, 36, "H2"},               // Heading 2
+        {0, 36, "H3"},               // Heading 3
+        {0, 50, "Link"}              // Link
+    };
+
+    // Calculate positions
+    float currentX = startX;
+    for (int i = 0; i < 6; i++) {
+        buttons[i].x = currentX;
+        currentX += buttons[i].w + spacing;
+    }
+
+    // Draw buttons
+    glEnable(GL_TEXTURE_2D);
+    for (int i = 0; i < 6; i++) {
+        Button& btn = buttons[i];
+
+        // Button background
+        glDisable(GL_TEXTURE_2D);
+        glColor3f(1.0f, 1.0f, 1.0f);
+        glBegin(GL_QUADS);
+        glVertex2f(btn.x, buttonY);
+        glVertex2f(btn.x + btn.w, buttonY);
+        glVertex2f(btn.x + btn.w, buttonY + buttonHeight);
+        glVertex2f(btn.x, buttonY + buttonHeight);
+        glEnd();
+
+        // Button border
+        glColor3f(0.7f, 0.7f, 0.7f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(btn.x, buttonY);
+        glVertex2f(btn.x + btn.w, buttonY);
+        glVertex2f(btn.x + btn.w, buttonY + buttonHeight);
+        glVertex2f(btn.x, buttonY + buttonHeight);
+        glEnd();
+
+        // Draw label text using glyphs
+        glEnable(GL_TEXTURE_2D);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glColor4f(0.2f, 0.2f, 0.2f, 1.0f);
+
+        // Calculate text width for centering
+        float textWidth = 0;
+        for (const char* p = btn.label; *p; p++) {
+            if (glyphs.find(*p) != glyphs.end()) {
+                textWidth += glyphs[*p].advance;
+            }
+        }
+
+        float textX = btn.x + (btn.w - textWidth) / 2.0f;
+        float textY = buttonY + buttonHeight / 2.0f + 6.0f;  // Approximate vertical center
+
+        for (const char* p = btn.label; *p; p++) {
+            if (glyphs.find(*p) != glyphs.end()) {
+                Glyph& g = glyphs[*p];
+                float xpos = textX + g.bearingX;
+                float ypos = textY - g.bearingY;
+                float w = g.width;
+                float h = g.height;
+
+                glBindTexture(GL_TEXTURE_2D, g.textureID);
+                glBegin(GL_QUADS);
+                glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos, ypos + h);
+                glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);
+                glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
+                glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos, ypos);
+                glEnd();
+
+                textX += g.advance;
+            }
+        }
+    }
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+bool Engine::handleToolbarClick(double x, double y) {
+    if (y >= TOOLBAR_HEIGHT) return false;  // Not in toolbar
+
+    float buttonHeight = 26.0f;
+    float buttonY = (TOOLBAR_HEIGHT - buttonHeight) / 2.0f;
+    float startX = 10.0f;
+    float spacing = 8.0f;
+
+    // Button widths matching renderToolbar
+    float widths[] = {30, 24, 36, 36, 36, 50};
+
+    float currentX = startX;
+    for (int i = 0; i < 6; i++) {
+        float btnX = currentX;
+        float btnW = widths[i];
+
+        if (x >= btnX && x <= btnX + btnW &&
+            y >= buttonY && y <= buttonY + buttonHeight) {
+            // Button clicked
+            switch (i) {
+                case 0: applyBold(); break;
+                case 1: applyItalic(); break;
+                case 2: applyHeading(1); break;
+                case 3: applyHeading(2); break;
+                case 4: applyHeading(3); break;
+                case 5: applyLink(); break;
+            }
+            return true;
+        }
+
+        currentX += btnW + spacing;
+    }
+
+    return false;
+}
+
+void Engine::wrapSelection(const std::string& before, const std::string& after) {
+    if (!hasSelection) return;
+
+    saveUndoState();
+
+    int start = std::min(selectionStart, selectionEnd);
+    int end = std::max(selectionStart, selectionEnd);
+    int selLen = end - start;
+    int insertLen = before.length() + after.length();
+
+    if (inputLength + insertLen >= INPUT_BUFFER_SIZE - 1) return;
+
+    // Make room for after text at end of selection
+    memmove(inputBuffer + end + after.length(), inputBuffer + end, inputLength - end + 1);
+    memcpy(inputBuffer + end, after.c_str(), after.length());
+    inputLength += after.length();
+
+    // Make room for before text at start of selection
+    memmove(inputBuffer + start + before.length(), inputBuffer + start, inputLength - start + 1);
+    memcpy(inputBuffer + start, before.c_str(), before.length());
+    inputLength += before.length();
+
+    // Update selection to cover wrapped text
+    selectionStart = start;
+    selectionEnd = start + before.length() + selLen + after.length();
+    cursorPos = selectionEnd;
+
+    // Update markdown content
+    if (textBuffer && markdownRenderer) {
+        std::string newText(inputBuffer, inputLength);
+        textBuffer->setText(newText);
+        markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+    }
+}
+
+void Engine::applyBold() {
+    if (hasSelection) {
+        wrapSelection("**", "**");
+    } else {
+        // Insert ** markers and place cursor between them
+        saveUndoState();
+        if (inputLength + 4 < INPUT_BUFFER_SIZE - 1) {
+            memmove(inputBuffer + cursorPos + 4, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+            memcpy(inputBuffer + cursorPos, "****", 4);
+            inputLength += 4;
+            cursorPos += 2;  // Place cursor between ** markers
+
+            if (textBuffer && markdownRenderer) {
+                std::string newText(inputBuffer, inputLength);
+                textBuffer->setText(newText);
+                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+            }
+        }
+    }
+}
+
+void Engine::applyItalic() {
+    if (hasSelection) {
+        wrapSelection("*", "*");
+    } else {
+        // Insert * markers and place cursor between them
+        saveUndoState();
+        if (inputLength + 2 < INPUT_BUFFER_SIZE - 1) {
+            memmove(inputBuffer + cursorPos + 2, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+            memcpy(inputBuffer + cursorPos, "**", 2);
+            inputLength += 2;
+            cursorPos += 1;  // Place cursor between * markers
+
+            if (textBuffer && markdownRenderer) {
+                std::string newText(inputBuffer, inputLength);
+                textBuffer->setText(newText);
+                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+            }
+        }
+    }
+}
+
+void Engine::applyHeading(int level) {
+    saveUndoState();
+
+    // Find start of current line - use selection start if there's a selection
+    int targetPos = hasSelection ? std::min(selectionStart, selectionEnd) : cursorPos;
+    int lineStart = findLineStart(targetPos);
+
+    // Build heading prefix
+    std::string prefix(level, '#');
+    prefix += " ";
+
+    // Check if line already has heading markers - remove them first
+    int existingLevel = 0;
+    int pos = lineStart;
+    while (pos < inputLength && inputBuffer[pos] == '#') {
+        existingLevel++;
+        pos++;
+    }
+    if (existingLevel > 0 && pos < inputLength && inputBuffer[pos] == ' ') {
+        pos++;  // Include space after #
+    }
+
+    if (existingLevel > 0) {
+        // Remove existing heading prefix
+        int removeLen = pos - lineStart;
+        memmove(inputBuffer + lineStart, inputBuffer + pos, inputLength - pos + 1);
+        inputLength -= removeLen;
+        cursorPos -= removeLen;
+        if (cursorPos < lineStart) cursorPos = lineStart;
+    }
+
+    // Insert new heading prefix at line start
+    if (inputLength + prefix.length() < INPUT_BUFFER_SIZE - 1) {
+        memmove(inputBuffer + lineStart + prefix.length(), inputBuffer + lineStart, inputLength - lineStart + 1);
+        memcpy(inputBuffer + lineStart, prefix.c_str(), prefix.length());
+        inputLength += prefix.length();
+        cursorPos += prefix.length();
+
+        if (textBuffer && markdownRenderer) {
+            std::string newText(inputBuffer, inputLength);
+            textBuffer->setText(newText);
+            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+        }
+    }
+
+    hasSelection = false;
+}
+
+void Engine::applyLink() {
+    if (hasSelection) {
+        // Wrap selected text as link text
+        int start = std::min(selectionStart, selectionEnd);
+        int end = std::max(selectionStart, selectionEnd);
+        std::string selectedText(inputBuffer + start, end - start);
+
+        saveUndoState();
+
+        // Build link syntax: [selected text](url)
+        std::string before = "[";
+        std::string after = "](url)";
+
+        if (inputLength + before.length() + after.length() >= INPUT_BUFFER_SIZE - 1) return;
+
+        // Insert after part
+        memmove(inputBuffer + end + after.length(), inputBuffer + end, inputLength - end + 1);
+        memcpy(inputBuffer + end, after.c_str(), after.length());
+        inputLength += after.length();
+
+        // Insert before part
+        memmove(inputBuffer + start + before.length(), inputBuffer + start, inputLength - start + 1);
+        memcpy(inputBuffer + start, before.c_str(), before.length());
+        inputLength += before.length();
+
+        // Position cursor to select "url" placeholder
+        int urlStart = start + before.length() + (end - start) + 2;  // After ](
+        selectionStart = urlStart;
+        selectionEnd = urlStart + 3;  // Select "url"
+        cursorPos = selectionEnd;
+        hasSelection = true;
+
+        if (textBuffer && markdownRenderer) {
+            std::string newText(inputBuffer, inputLength);
+            textBuffer->setText(newText);
+            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+        }
+    } else {
+        // Insert link template
+        saveUndoState();
+        std::string linkTemplate = "[text](url)";
+        if (inputLength + linkTemplate.length() < INPUT_BUFFER_SIZE - 1) {
+            memmove(inputBuffer + cursorPos + linkTemplate.length(), inputBuffer + cursorPos, inputLength - cursorPos + 1);
+            memcpy(inputBuffer + cursorPos, linkTemplate.c_str(), linkTemplate.length());
+            inputLength += linkTemplate.length();
+
+            // Select "text" placeholder
+            selectionStart = cursorPos + 1;
+            selectionEnd = cursorPos + 5;  // "text" is 4 chars, end is exclusive
+            cursorPos = selectionEnd;
+            hasSelection = true;
+
+            if (textBuffer && markdownRenderer) {
+                std::string newText(inputBuffer, inputLength);
+                textBuffer->setText(newText);
+                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+            }
+        }
+    }
 }
 

@@ -49,13 +49,15 @@ private:
 class DrawTextOp : public PaintOp {
 public:
     DrawTextOp(const Point& position, const std::string& text, const Color& color,
-               float fontSize = 16.0f, TextStyle style = TextStyle::Normal);
+               float fontSize = 16.0f, TextStyle style = TextStyle::Normal,
+               bool monospace = false);
 
     const Point& getPosition() const;
     const std::string& getText() const;
     const Color& getColor() const;
     float getFontSize() const;
     TextStyle getStyle() const;
+    bool isMonospace() const;
 
 private:
     Point position;
@@ -63,6 +65,7 @@ private:
     Color color;
     float fontSize;
     TextStyle style;
+    bool monospace;
 };
 
 class DrawImageOp : public PaintOp {

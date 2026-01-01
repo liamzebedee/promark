@@ -70,10 +70,26 @@ BlockQuoteObject::BlockQuoteObject()
     : MarkdownObject(MarkdownObjectType::BlockQuote) {
 }
 
-ListObject::ListObject(bool ordered) 
+ListObject::ListObject(bool ordered)
     : MarkdownObject(MarkdownObjectType::List), ordered(ordered) {
 }
 
 bool ListObject::isOrdered() const {
     return ordered;
+}
+
+CodeBlockObject::CodeBlockObject(const std::string& language)
+    : MarkdownObject(MarkdownObjectType::CodeBlock), language(language) {
+}
+
+const std::string& CodeBlockObject::getLanguage() const {
+    return language;
+}
+
+const std::string& CodeBlockObject::getCode() const {
+    return code;
+}
+
+void CodeBlockObject::setCode(const std::string& code) {
+    this->code = code;
 }

@@ -28,6 +28,7 @@ public:
     void setTextBuffer(std::unique_ptr<TextBuffer> buffer);
     void setCaretState(const CaretState& state);
     void setFontFace(FT_Face face);
+    void setMonoFontFace(FT_Face face);
     void render(const Size& viewportSize);
 
     // Manual pipeline control for debugging/testing

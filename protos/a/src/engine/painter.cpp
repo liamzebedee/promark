@@ -67,11 +67,12 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
     const auto& lines = textObject->getLines();
     const auto& linkRanges = textObject->getLinkRanges();
     const auto& styleRanges = textObject->getStyleRanges();
+    bool isMonospace = textObject->getMonospace();
 
     if (lines.empty()) {
         // Fallback: render full text as single line
         Point textPos(rect.position.x, rect.position.y + fontSize);
-        auto textOp = std::make_unique<DrawTextOp>(textPos, fullText, defaultColor, fontSize);
+        auto textOp = std::make_unique<DrawTextOp>(textPos, fullText, defaultColor, fontSize, TextStyle::Normal, isMonospace);
         displayList.push_back(std::move(textOp));
         return;
     }
@@ -146,7 +147,7 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
             // Draw text segment with appropriate color and style
             Color segmentColor = inLink ? linkColor : defaultColor;
             Point textPos(segmentX, lineY);
-            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize, currentStyle);
+            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize, currentStyle, isMonospace);
             displayList.push_back(std::move(textOp));
 
             // Draw underline for links

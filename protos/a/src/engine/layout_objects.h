@@ -105,6 +105,8 @@ public:
 
     // FreeType face for glyph metrics
     void setFontFace(FT_Face face);
+    void setMonospace(bool mono) { isMonospace = mono; }
+    bool getMonospace() const { return isMonospace; }
 
     // Link ranges from parent paragraph
     const std::vector<InlineLinkRange>& getLinkRanges() const;
@@ -118,6 +120,7 @@ private:
     std::vector<LineInfo> lines;
     FT_Face fontFace;
     float availableWidth;
+    bool isMonospace = false;
     void shapeText();
     void wrapText(float maxWidth);
 };

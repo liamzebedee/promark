@@ -131,3 +131,15 @@ public:
 private:
     bool ordered;
 };
+
+class CodeBlockObject : public MarkdownObject {
+public:
+    CodeBlockObject(const std::string& language = "");
+    const std::string& getLanguage() const;
+    const std::string& getCode() const;
+    void setCode(const std::string& code);
+
+private:
+    std::string language;
+    std::string code;
+};

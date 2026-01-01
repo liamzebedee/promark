@@ -81,6 +81,12 @@ int main() {
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
+        // Check if engine wants to close
+        if (engine->shouldClose()) {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
+            break;
+        }
+
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
         engine->render(width, height);

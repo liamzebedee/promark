@@ -7,7 +7,15 @@ LIBJPEG_BUILD_DIR = $(VENDOR_DIR)/libjpeg-turbo-build
 SRC_DIR = src
 BUILD_DIR = build
 
+# Optimization: use 'make release' or 'make OPT=1'
+ifdef OPT
+OPTFLAGS = -O3 -DNDEBUG -flto
+else
+OPTFLAGS = -g
+endif
+
 CXXFLAGS = -std=c++17 -Wall -Wextra \
+	$(OPTFLAGS) \
 	-DGL_SILENCE_DEPRECATION \
 	-Wno-unused-parameter \
 	-Wno-reorder \
@@ -67,4 +75,7 @@ clean:
 clean-all: clean
 	rm -rf $(VENDOR_DIR)
 
-.PHONY: all deps clean clean-all
+release:
+	$(MAKE) OPT=1
+
+.PHONY: all deps clean clean-all release
