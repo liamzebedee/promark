@@ -106,6 +106,9 @@ public:
     // FreeType face for glyph metrics
     void setFontFace(FT_Face face);
 
+    // Link ranges from parent paragraph
+    const std::vector<InlineLinkRange>& getLinkRanges() const;
+
 private:
     std::vector<GlyphRun> glyphRuns;
     std::vector<float> charXOffsets;  // Cumulative x offset for each character

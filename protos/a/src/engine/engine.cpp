@@ -6,7 +6,8 @@
 #include <algorithm>
 #include <cmath>
 
-Engine::Engine() : leftMouseHeld(false), dirty(false), scrollOffset(0.0f), scrollVelocity(0.0f),
+Engine::Engine() : leftMouseHeld(false), dirty(false), lastClickTime(0), lastClickX(0), lastClickY(0),
+                   scrollOffset(0.0f), scrollVelocity(0.0f),
                    contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
                    fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
                    caretAnimX(0), caretAnimY(0), caretVelX(0), caretVelY(0),
@@ -534,17 +535,56 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
             if (markdownRenderer) {
                 // Add scroll offset to get content-space y coordinate
                 float contentY = static_cast<float>(y) + scrollOffset;
+
+                // Check if clicking on a link
+                std::string linkUrl = markdownRenderer->getLinkAtPosition(static_cast<float>(x), contentY);
+                if (!linkUrl.empty()) {
+                    // Open link in browser
+                    openUrl(linkUrl);
+                    leftMouseHeld = false;
+                    return;
+                }
+
+                // Detect double-click (within 400ms and 5 pixels)
+                double currentTime = glfwGetTime();
+                bool isDoubleClick = (currentTime - lastClickTime < 0.4) &&
+                                     (std::abs(x - lastClickX) < 5) &&
+                                     (std::abs(y - lastClickY) < 5);
+
                 cursorPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
                 cursorPos = std::max(0, std::min(cursorPos, inputLength));
-                goalColumn = getColumnInLine(cursorPos);
-                selectionStart = cursorPos;
-                selectionEnd = cursorPos;
-                hasSelection = false;
+
+                if (isDoubleClick) {
+                    // Double-click: select word
+                    int wordStart = findWordBoundary(cursorPos, -1);
+                    int wordEnd = findWordBoundary(cursorPos, 1);
+                    selectionStart = wordStart;
+                    selectionEnd = wordEnd;
+                    cursorPos = wordEnd;
+                    hasSelection = (selectionStart != selectionEnd);
+                    leftMouseHeld = false;  // Don't drag after double-click
+                } else {
+                    // Single click
+                    goalColumn = getColumnInLine(cursorPos);
+                    selectionStart = cursorPos;
+                    selectionEnd = cursorPos;
+                    hasSelection = false;
+                }
+
+                lastClickTime = currentTime;
+                lastClickX = x;
+                lastClickY = y;
             }
         } else if (action == GLFW_RELEASE) {
             leftMouseHeld = false;
         }
     }
+}
+
+void Engine::openUrl(const std::string& url) {
+    // macOS: use 'open' command to open URL in default browser
+    std::string command = "open \"" + url + "\"";
+    system(command.c_str());
 }
 
 void Engine::handleMouseMove(double x, double y) {
@@ -556,6 +596,13 @@ void Engine::handleMouseMove(double x, double y) {
         selectionEnd = newPos;
         hasSelection = (selectionStart != selectionEnd);
     }
+}
+
+bool Engine::isOverLink(double x, double y) {
+    if (!markdownRenderer) return false;
+    float contentY = static_cast<float>(y) + scrollOffset;
+    std::string url = markdownRenderer->getLinkAtPosition(static_cast<float>(x), contentY);
+    return !url.empty();
 }
 
 bool Engine::initFreeType() {

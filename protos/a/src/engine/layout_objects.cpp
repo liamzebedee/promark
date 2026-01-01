@@ -1,4 +1,5 @@
 #include "layout_objects.h"
+#include "utf8.h"
 #include <jpeglib.h>
 
 LayoutObject::LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow) 
@@ -135,12 +136,14 @@ Size TextLayoutObject::computeIntrinsicSize() const {
         return Size(charXOffsets.back(), lineHeight);
     }
 
-    // Fallback: compute width using FreeType or monospace estimate
+    // Fallback: compute width using FreeType or monospace estimate with UTF-8
     float width = 0.0f;
     if (fontFace) {
         FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
-        for (char c : text) {
-            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(c));
+        size_t pos = 0;
+        while (pos < text.length()) {
+            uint32_t codepoint = utf8::decode(text, pos);
+            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(codepoint));
             if (FT_Load_Glyph(fontFace, glyphIndex, FT_LOAD_DEFAULT) == 0) {
                 width += fontFace->glyph->advance.x / 64.0f;
             } else {
@@ -148,7 +151,7 @@ Size TextLayoutObject::computeIntrinsicSize() const {
             }
         }
     } else {
-        width = text.length() * fontSize * 0.6f;
+        width = utf8::length(text) * fontSize * 0.6f;
     }
 
     return Size(width, fontSize);
@@ -179,7 +182,8 @@ void TextLayoutObject::setFontFace(FT_Face face) {
 }
 
 int TextLayoutObject::getDOMLength() const {
-    int len = static_cast<int>(sourceObject->getText().length());
+    // Return code point count, not byte count
+    int len = static_cast<int>(utf8::length(sourceObject->getText()));
     // Empty lines still occupy 1 DOM position (like a newline)
     return (len == 0) ? 1 : len;
 }
@@ -208,11 +212,14 @@ void TextLayoutObject::shapeText() {
     float x = 0.0f;
 
     if (fontFace) {
-        // Use FreeType for accurate glyph metrics
+        // Use FreeType for accurate glyph metrics with UTF-8 decoding
         FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
 
-        for (size_t i = 0; i < text.length(); i++) {
-            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(text[i]));
+        // Decode UTF-8 and get advance for each code point
+        size_t pos = 0;
+        while (pos < text.length()) {
+            uint32_t codepoint = utf8::decode(text, pos);
+            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(codepoint));
             if (FT_Load_Glyph(fontFace, glyphIndex, FT_LOAD_DEFAULT) == 0) {
                 x += fontFace->glyph->advance.x / 64.0f;  // advance in 1/64 pixels
             } else {
@@ -222,9 +229,11 @@ void TextLayoutObject::shapeText() {
             charXOffsets.push_back(x);
         }
     } else {
-        // Fallback: monospace approximation
+        // Fallback: monospace approximation (still need to decode UTF-8)
         float charWidth = fontSize * 0.6f;
-        for (size_t i = 0; i < text.length(); i++) {
+        size_t pos = 0;
+        while (pos < text.length()) {
+            utf8::decode(text, pos);  // Advance pos by one code point
             x += charWidth;
             charXOffsets.push_back(x);
         }
@@ -253,17 +262,40 @@ void TextLayoutObject::wrapText(float maxWidth) {
     int lastWordEnd = 0;
     float lastWordEndX = 0;
 
-    for (size_t i = 0; i < text.length(); i++) {
+    // Decode UTF-8 to code points for iteration
+    std::vector<uint32_t> codepoints = utf8::decode(text);
+    size_t numCodepoints = codepoints.size();
+
+    for (size_t i = 0; i < numCodepoints; i++) {
+        uint32_t cp = codepoints[i];
         float charEndX = charXOffsets[i];
         float lineWidth = charEndX - lineStartX;
 
+        // Force line break on newline character
+        if (cp == '\n') {
+            LineInfo line;
+            line.startChar = lineStart;
+            line.endChar = i;  // Don't include the newline
+            line.yOffset = lines.size() * lineHeight;
+            line.width = (i > 0 && lineStart < (int)i) ?
+                (charXOffsets[i - 1] - lineStartX) : 0;
+            lines.push_back(line);
+
+            // Start new line after the newline
+            lineStart = i + 1;
+            lineStartX = charEndX;
+            lastWordEnd = lineStart;
+            lastWordEndX = lineStartX;
+            continue;
+        }
+
         // Track word boundaries (space ends a word)
-        if (text[i] == ' ') {
+        if (cp == ' ') {
             lastWordEnd = i;
             lastWordEndX = charEndX;
         }
 
-        // Check if we need to wrap
+        // Check if we need to wrap due to width
         if (lineWidth > maxWidth && i > static_cast<size_t>(lineStart)) {
             LineInfo line;
             line.yOffset = lines.size() * lineHeight;
@@ -290,13 +322,16 @@ void TextLayoutObject::wrapText(float maxWidth) {
         }
     }
 
-    // Add final line
-    LineInfo line;
-    line.startChar = lineStart;
-    line.endChar = text.length();
-    line.yOffset = lines.size() * lineHeight;
-    line.width = charXOffsets.back() - lineStartX;
-    lines.push_back(line);
+    // Add final line (if there's content after the last newline)
+    if (lineStart <= (int)numCodepoints) {
+        LineInfo line;
+        line.startChar = lineStart;
+        line.endChar = numCodepoints;
+        line.yOffset = lines.size() * lineHeight;
+        line.width = (lineStart < (int)charXOffsets.size()) ?
+            (charXOffsets.back() - lineStartX) : 0;
+        lines.push_back(line);
+    }
 }
 
 const std::vector<TextLayoutObject::LineInfo>& TextLayoutObject::getLines() const {
@@ -324,6 +359,15 @@ float TextLayoutObject::getCharXOffsetInLine(int charIndex) const {
     if (charIndex > (int)charXOffsets.size()) charIndex = charXOffsets.size();
 
     return charXOffsets[charIndex - 1] - lineStartX;
+}
+
+const std::vector<InlineLinkRange>& TextLayoutObject::getLinkRanges() const {
+    // Get link ranges from parent paragraph
+    if (parent && parent->getSourceObject()) {
+        return parent->getSourceObject()->getLinkRanges();
+    }
+    static std::vector<InlineLinkRange> empty;
+    return empty;
 }
 
 ImageLayoutObject::ImageLayoutObject(const MarkdownObject* sourceObject) 

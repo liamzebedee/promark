@@ -31,6 +31,10 @@ void MarkdownObject::setRawRange(int start, int end) {
     rawEnd = end;
 }
 
+void MarkdownObject::addLinkRange(int start, int end, const std::string& url) {
+    linkRanges.push_back({start, end, url});
+}
+
 HeadingObject::HeadingObject(int level) : MarkdownObject(MarkdownObjectType::Heading), level(level) {
 }
 
@@ -50,12 +54,16 @@ const std::string& ImageObject::getAlt() const {
     return alt;
 }
 
-LinkObject::LinkObject(const std::string& url) 
+LinkObject::LinkObject(const std::string& url)
     : MarkdownObject(MarkdownObjectType::Link), url(url) {
 }
 
 const std::string& LinkObject::getUrl() const {
     return url;
+}
+
+BlockQuoteObject::BlockQuoteObject()
+    : MarkdownObject(MarkdownObjectType::BlockQuote) {
 }
 
 ListObject::ListObject(bool ordered) 

@@ -34,6 +34,11 @@ DisplayList Painter::paint(const LayoutObject* layoutRoot, const CaretState* car
 void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& displayList) {
     paintBackground(layoutObject, displayList);
 
+    // Draw blockquote gray bar
+    if (layoutObject->getSourceObject()->getType() == MarkdownObjectType::BlockQuote) {
+        paintBlockQuoteBar(layoutObject, displayList);
+    }
+
     if (const TextLayoutObject* textObject = dynamic_cast<const TextLayoutObject*>(layoutObject)) {
         paintText(textObject, displayList);
     } else if (const ImageLayoutObject* imageObject = dynamic_cast<const ImageLayoutObject*>(layoutObject)) {
@@ -55,25 +60,76 @@ void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& d
 
 void Painter::paintText(const TextLayoutObject* textObject, DisplayList& displayList) {
     const Rect& rect = textObject->getRect();
-    Color textColor = getTextColor(textObject->getSourceObject());
+    Color defaultColor = getTextColor(textObject->getSourceObject());
+    Color linkColor(0, 102, 204, 255);  // Blue for links
     float fontSize = textObject->getFontSize();
     std::string fullText = textObject->getSourceObject()->getText();
     const auto& lines = textObject->getLines();
+    const auto& linkRanges = textObject->getLinkRanges();
 
     if (lines.empty()) {
         // Fallback: render full text as single line
         Point textPos(rect.position.x, rect.position.y + fontSize);
-        auto textOp = std::make_unique<DrawTextOp>(textPos, fullText, textColor, fontSize);
+        auto textOp = std::make_unique<DrawTextOp>(textPos, fullText, defaultColor, fontSize);
         displayList.push_back(std::move(textOp));
         return;
     }
 
-    // Render each wrapped line
+    // Render each wrapped line, with different colors for links
     for (const auto& line : lines) {
-        std::string lineText = fullText.substr(line.startChar, line.endChar - line.startChar);
-        Point textPos(rect.position.x, rect.position.y + line.yOffset + fontSize);
-        auto textOp = std::make_unique<DrawTextOp>(textPos, lineText, textColor, fontSize);
-        displayList.push_back(std::move(textOp));
+        float lineX = rect.position.x;
+        float lineY = rect.position.y + line.yOffset + fontSize;
+        int charPos = line.startChar;
+
+        while (charPos < line.endChar) {
+            // Check if current position is inside a link
+            bool inLink = false;
+            int linkEnd = line.endChar;
+            std::string linkUrl;
+
+            for (const auto& lr : linkRanges) {
+                if (charPos >= lr.startChar && charPos < lr.endChar) {
+                    inLink = true;
+                    linkEnd = std::min(lr.endChar, line.endChar);
+                    linkUrl = lr.url;
+                    break;
+                } else if (lr.startChar > charPos && lr.startChar < linkEnd) {
+                    // Next link starts before current segment end
+                    linkEnd = lr.startChar;
+                }
+            }
+
+            // Extract segment text
+            int segmentEnd = inLink ? linkEnd : linkEnd;
+            std::string segmentText = fullText.substr(charPos, segmentEnd - charPos);
+
+            // Calculate x position for this segment
+            float segmentX = lineX;
+            if (charPos > line.startChar) {
+                segmentX += textObject->getCharXOffsetInLine(charPos);
+            }
+
+            // Draw text segment
+            Color segmentColor = inLink ? linkColor : defaultColor;
+            Point textPos(segmentX, lineY);
+            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize);
+            displayList.push_back(std::move(textOp));
+
+            // Draw underline for links
+            if (inLink) {
+                float segmentWidth = textObject->getCharXOffsetInLine(segmentEnd) -
+                                     (charPos > line.startChar ? textObject->getCharXOffsetInLine(charPos) : 0);
+                float underlineY = lineY + 2.0f;
+                auto lineOp = std::make_unique<DrawLineOp>(
+                    Point(segmentX, underlineY),
+                    Point(segmentX + segmentWidth, underlineY),
+                    1.0f, linkColor
+                );
+                displayList.push_back(std::move(lineOp));
+            }
+
+            charPos = segmentEnd;
+        }
     }
 }
 
@@ -318,6 +374,69 @@ DOMPositionResult Painter::findLayoutForPosition(const LayoutObject* root, int d
     }
 
     return result;
+}
+
+void Painter::paintBlockQuoteBar(const LayoutObject* layoutObject, DisplayList& displayList) {
+    const Rect& rect = layoutObject->getRect();
+    Color barColor(200, 200, 200, 255);  // Gray
+
+    // Draw vertical bar on the left side
+    float barX = rect.position.x - 15.0f;
+    float barTop = rect.position.y;
+    float barBottom = rect.position.y + rect.size.height - 10.0f;  // Slight offset
+
+    auto lineOp = std::make_unique<DrawLineOp>(
+        Point(barX, barTop),
+        Point(barX, barBottom),
+        3.0f,  // thickness
+        barColor
+    );
+    displayList.push_back(std::move(lineOp));
+}
+
+void Painter::paintLinkUnderline(const TextLayoutObject* textObject, DisplayList& displayList) {
+    const Rect& rect = textObject->getRect();
+    float fontSize = textObject->getFontSize();
+    Color linkColor(0, 102, 204, 255);  // Blue
+
+    const auto& lines = textObject->getLines();
+    if (lines.empty()) {
+        // Single line fallback
+        float y = rect.position.y + fontSize + 2.0f;  // Below baseline
+        float width = rect.size.width;
+        auto lineOp = std::make_unique<DrawLineOp>(
+            Point(rect.position.x, y),
+            Point(rect.position.x + width, y),
+            1.0f,
+            linkColor
+        );
+        displayList.push_back(std::move(lineOp));
+        return;
+    }
+
+    // Draw underline for each line
+    for (const auto& line : lines) {
+        float y = rect.position.y + line.yOffset + fontSize + 2.0f;
+        auto lineOp = std::make_unique<DrawLineOp>(
+            Point(rect.position.x, y),
+            Point(rect.position.x + line.width, y),
+            1.0f,
+            linkColor
+        );
+        displayList.push_back(std::move(lineOp));
+    }
+}
+
+bool Painter::isInsideLink(const LayoutObject* layoutObject) {
+    // Check if this layout object or any ancestor is a link
+    const LayoutObject* current = layoutObject;
+    while (current) {
+        if (current->getSourceObject()->getType() == MarkdownObjectType::Link) {
+            return true;
+        }
+        current = current->getParent();
+    }
+    return false;
 }
 
 // Compute selection rect for a portion of a layout object

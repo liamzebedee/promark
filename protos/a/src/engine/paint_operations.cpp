@@ -106,3 +106,24 @@ const Rect& DrawSelectionRectOp::getRect() const {
 const Color& DrawSelectionRectOp::getColor() const {
     return color;
 }
+
+// DrawLineOp
+DrawLineOp::DrawLineOp(const Point& start, const Point& end, float thickness, const Color& color)
+    : PaintOp(PaintOpType::DrawLine), start(start), end(end), thickness(thickness), color(color) {
+}
+
+const Point& DrawLineOp::getStart() const {
+    return start;
+}
+
+const Point& DrawLineOp::getEnd() const {
+    return end;
+}
+
+float DrawLineOp::getThickness() const {
+    return thickness;
+}
+
+const Color& DrawLineOp::getColor() const {
+    return color;
+}

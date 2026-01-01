@@ -1,4 +1,5 @@
 #include "rasterizer.h"
+#include "utf8.h"
 #include <OpenGL/gl.h>
 #include <map>
 #include <iostream>
@@ -33,7 +34,7 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport)
     // Note: viewport and matrices are set up by Engine::render()
     // We don't reset them here to preserve scroll offset transforms
     (void)viewport;
-    
+
     // Execute all paint operations
     for (const auto& op : displayList) {
         switch (op->getType()) {
@@ -60,6 +61,9 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport)
                 break;
             case PaintOpType::DrawSelectionRect:
                 executeDrawSelectionRect(static_cast<const DrawSelectionRectOp&>(*op));
+                break;
+            case PaintOpType::DrawLine:
+                executeDrawLine(static_cast<const DrawLineOp&>(*op));
                 break;
         }
     }
@@ -394,8 +398,8 @@ bool Rasterizer::loadFont(const char* fontPath) {
     return true;
 }
 
-const GlyphInfo* Rasterizer::getGlyph(char c, int fontSize) {
-    GlyphKey key{c, fontSize};
+const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize) {
+    GlyphKey key{codepoint, fontSize};
 
     // Check cache
     auto it = glyphCache.find(key);
@@ -409,8 +413,8 @@ const GlyphInfo* Rasterizer::getGlyph(char c, int fontSize) {
         currentFontSize = fontSize;
     }
 
-    // Load glyph
-    if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
+    // Load glyph using Unicode code point
+    if (FT_Load_Char(face, static_cast<FT_ULong>(codepoint), FT_LOAD_RENDER)) {
         return nullptr;
     }
 
@@ -445,9 +449,9 @@ const GlyphInfo* Rasterizer::getGlyph(char c, int fontSize) {
     return &glyphCache[key];
 }
 
-void Rasterizer::renderChar(char c, float x, float y, const Color& color) {
+void Rasterizer::renderCodepoint(uint32_t codepoint, float x, float y, const Color& color) {
     // Load glyph
-    if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
+    if (FT_Load_Char(face, static_cast<FT_ULong>(codepoint), FT_LOAD_RENDER)) {
         return;
     }
 
@@ -510,13 +514,17 @@ void Rasterizer::renderText(const std::string& text, float x, float y, const Col
     glEnable(GL_TEXTURE_2D);
     glColor4ub(color.r, color.g, color.b, color.a);
 
-    for (char c : text) {
-        if (c == '\n') {
+    // Decode UTF-8 and render each code point
+    size_t pos = 0;
+    while (pos < text.length()) {
+        uint32_t codepoint = utf8::decode(text, pos);
+
+        if (codepoint == '\n') {
             continue;  // Newlines handled by layout
         }
 
         // Get cached glyph
-        const GlyphInfo* glyph = getGlyph(c, currentFontSize);
+        const GlyphInfo* glyph = getGlyph(codepoint, currentFontSize);
         if (!glyph) {
             continue;
         }
@@ -594,4 +602,19 @@ void Rasterizer::executeDrawSelectionRect(const DrawSelectionRectOp& op) {
     glEnd();
 
     glDisable(GL_BLEND);
+}
+
+void Rasterizer::executeDrawLine(const DrawLineOp& op) {
+    const Point& start = op.getStart();
+    const Point& end = op.getEnd();
+    float thickness = op.getThickness();
+    const Color& color = op.getColor();
+
+    glColor4ub(color.r, color.g, color.b, color.a);
+    glLineWidth(thickness);
+    glBegin(GL_LINES);
+    glVertex2f(start.x, start.y);
+    glVertex2f(end.x, end.y);
+    glEnd();
+    glLineWidth(1.0f);
 }

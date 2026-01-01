@@ -97,11 +97,24 @@ void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     }
 }
 
-void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+GLFWcursor* ibeamCursor = nullptr;
+GLFWcursor* handCursor = nullptr;
+bool currentlyOverLink = false;
+
+void cursorPosCallback(GLFWwindow* win, double xpos, double ypos) {
     if (engine) {
         float scaleX, scaleY;
-        getDisplayScale(window, scaleX, scaleY);
-        engine->handleMouseMove(xpos * scaleX, ypos * scaleY);
+        getDisplayScale(win, scaleX, scaleY);
+        double scaledX = xpos * scaleX;
+        double scaledY = ypos * scaleY;
+        engine->handleMouseMove(scaledX, scaledY);
+
+        // Change cursor when over link
+        bool overLink = engine->isOverLink(scaledX, scaledY);
+        if (overLink != currentlyOverLink) {
+            currentlyOverLink = overLink;
+            glfwSetCursor(win, overLink ? handCursor : ibeamCursor);
+        }
     }
 }
 
@@ -139,7 +152,8 @@ int main(int argc, char* argv[]) {
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
 
-    GLFWcursor* ibeamCursor = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+    ibeamCursor = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+    handCursor = glfwCreateStandardCursor(GLFW_HAND_CURSOR);
     glfwSetCursor(window, ibeamCursor);
 
     engine = new Engine();
@@ -171,6 +185,7 @@ int main(int argc, char* argv[]) {
 
     delete engine;
     glfwDestroyCursor(ibeamCursor);
+    glfwDestroyCursor(handCursor);
     glfwTerminate();
     return 0;
 }

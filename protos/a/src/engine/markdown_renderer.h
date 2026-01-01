@@ -55,6 +55,9 @@ public:
     // Get cursor X/Y position for animation
     void getCursorXY(int domPos, float& outX, float& outY) const;
 
+    // Get link URL at position (returns empty string if not on a link)
+    std::string getLinkAtPosition(float x, float y) const;
+
 private:
     std::unique_ptr<TextBuffer> textBuffer;
     std::unique_ptr<MarkdownParser> parser;

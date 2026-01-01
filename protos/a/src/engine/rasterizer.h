@@ -2,6 +2,7 @@
 #include "paint_operations.h"
 #include <map>
 #include <vector>
+#include <cstdint>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <jpeglib.h>
@@ -15,13 +16,13 @@ struct GlyphInfo {
     int advance;
 };
 
-// Key for glyph cache: character + font size
+// Key for glyph cache: Unicode code point + font size
 struct GlyphKey {
-    char character;
+    uint32_t codepoint;
     int fontSize;
 
     bool operator<(const GlyphKey& other) const {
-        if (character != other.character) return character < other.character;
+        if (codepoint != other.codepoint) return codepoint < other.codepoint;
         return fontSize < other.fontSize;
     }
 };
@@ -49,6 +50,7 @@ private:
     void executeDrawDebugBorder(const DrawDebugBorderOp& op);
     void executeDrawCaret(const DrawCaretOp& op);
     void executeDrawSelectionRect(const DrawSelectionRectOp& op);
+    void executeDrawLine(const DrawLineOp& op);
 
     void loadImage(const std::string& imagePath);
     void decodeJpeg(const std::string& filePath);
@@ -69,11 +71,11 @@ private:
     
     // Font rendering
     bool loadFont(const char* fontPath);
-    void renderChar(char c, float x, float y, const Color& color);
+    void renderCodepoint(uint32_t codepoint, float x, float y, const Color& color);
     void renderText(const std::string& text, float x, float y, const Color& color);
 
     // Glyph caching
     std::map<GlyphKey, GlyphInfo> glyphCache;
-    const GlyphInfo* getGlyph(char c, int fontSize);
+    const GlyphInfo* getGlyph(uint32_t codepoint, int fontSize);
     int currentFontSize;
 };

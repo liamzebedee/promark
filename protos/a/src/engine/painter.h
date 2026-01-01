@@ -29,6 +29,9 @@ private:
     void paintBackground(const LayoutObject* layoutObject, DisplayList& displayList);
     void paintBorder(const LayoutObject* layoutObject, DisplayList& displayList);
     void paintDebugBorder(const LayoutObject* layoutObject, DisplayList& displayList);
+    void paintBlockQuoteBar(const LayoutObject* layoutObject, DisplayList& displayList);
+    void paintLinkUnderline(const TextLayoutObject* textObject, DisplayList& displayList);
+    bool isInsideLink(const LayoutObject* layoutObject);
 
     // Caret/selection painting
     void paintCaret(DisplayList& displayList, const CaretState& caret,

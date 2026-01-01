@@ -18,7 +18,8 @@ enum class PaintOpType {
     RestoreClip,
     DrawDebugBorder,
     DrawCaret,
-    DrawSelectionRect
+    DrawSelectionRect,
+    DrawLine
 };
 
 class PaintOp {
@@ -124,6 +125,23 @@ public:
 
 private:
     Rect rect;
+    Color color;
+};
+
+// Line (for underlines, blockquote bars)
+class DrawLineOp : public PaintOp {
+public:
+    DrawLineOp(const Point& start, const Point& end, float thickness, const Color& color);
+
+    const Point& getStart() const;
+    const Point& getEnd() const;
+    float getThickness() const;
+    const Color& getColor() const;
+
+private:
+    Point start;
+    Point end;
+    float thickness;
     Color color;
 };
 

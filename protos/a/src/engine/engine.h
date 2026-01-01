@@ -24,6 +24,7 @@ public:
     void handleScroll(double xoffset, double yoffset);
     void handleMouse(int button, int action, int mods, double x, double y);
     void handleMouseMove(double x, double y);
+    bool isOverLink(double x, double y);  // Check if mouse is over a clickable link
 
     // File operations
     void setContent(const std::string& content);
@@ -34,6 +35,9 @@ public:
 private:
     bool leftMouseHeld;
     bool dirty;
+    double lastClickTime;
+    double lastClickX;
+    double lastClickY;
     float scrollOffset;
     float scrollVelocity;
     float contentHeight;
@@ -97,6 +101,9 @@ private:
 
     // Scroll helpers
     void ensureCursorVisible();
+
+    // URL handling
+    void openUrl(const std::string& url);
 
     // Undo system
     std::vector<UndoState> undoStack;

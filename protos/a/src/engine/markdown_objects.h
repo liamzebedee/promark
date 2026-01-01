@@ -20,6 +20,36 @@ enum class MarkdownObjectType {
     Text
 };
 
+// Inline link range within text
+struct InlineLinkRange {
+    int startChar;  // Start character index in display text
+    int endChar;    // End character index in display text
+    std::string url;
+};
+
+// Text style flags
+enum class TextStyle : uint8_t {
+    Normal = 0,
+    Bold = 1 << 0,
+    Italic = 1 << 1,
+    BoldItalic = Bold | Italic
+};
+
+inline TextStyle operator|(TextStyle a, TextStyle b) {
+    return static_cast<TextStyle>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+
+inline bool hasStyle(TextStyle style, TextStyle flag) {
+    return (static_cast<uint8_t>(style) & static_cast<uint8_t>(flag)) != 0;
+}
+
+// Inline style range within text
+struct InlineStyleRange {
+    int startChar;  // Start character index in display text
+    int endChar;    // End character index in display text
+    TextStyle style;
+};
+
 class MarkdownObject {
 public:
     MarkdownObject(MarkdownObjectType type);
@@ -40,6 +70,10 @@ public:
     void setTextOffset(int offset) { textOffset = offset; }
     int getTextOffset() const { return textOffset; }
 
+    // Inline link ranges (for paragraphs with links)
+    void addLinkRange(int start, int end, const std::string& url);
+    const std::vector<InlineLinkRange>& getLinkRanges() const { return linkRanges; }
+
 private:
     MarkdownObjectType type;
     std::vector<std::unique_ptr<MarkdownObject>> children;
@@ -47,6 +81,7 @@ private:
     int rawStart = 0;   // Start position in raw markdown
     int rawEnd = 0;     // End position in raw markdown
     int textOffset = 0; // Offset from rawStart to where visible text begins
+    std::vector<InlineLinkRange> linkRanges;
 };
 
 class HeadingObject : public MarkdownObject {
@@ -78,11 +113,16 @@ private:
     std::string url;
 };
 
+class BlockQuoteObject : public MarkdownObject {
+public:
+    BlockQuoteObject();
+};
+
 class ListObject : public MarkdownObject {
 public:
     ListObject(bool ordered);
     bool isOrdered() const;
-    
+
 private:
     bool ordered;
 };

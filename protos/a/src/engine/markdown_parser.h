@@ -15,7 +15,8 @@ private:
     std::unique_ptr<MarkdownObject> parseDocument(const std::string& text);
     std::unique_ptr<MarkdownObject> parseBlock(const std::string& text, size_t& position);
     std::unique_ptr<MarkdownObject> parseInline(const std::string& text, size_t& position);
-    
+    std::string parseInlineElements(const std::string& line, int lineRawStart, MarkdownObject* parent);
+
     bool isHeading(const std::string& text, size_t position);
     bool isBlockQuote(const std::string& text, size_t position);
     bool isCodeBlock(const std::string& text, size_t position);

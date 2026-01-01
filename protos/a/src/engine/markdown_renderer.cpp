@@ -199,11 +199,13 @@ int MarkdownRenderer::hitTest(float x, float y) const {
 
     for (const auto& [layout, layoutDOMPos] : textLayouts) {
         const Rect& rect = layout->getRect();
-        float fontSize = layout->getFontSize();
-        float lineHeight = fontSize;
+        float layoutHeight = rect.size.height;
+        if (layoutHeight <= 0) {
+            layoutHeight = layout->getFontSize();  // Fallback
+        }
 
         // Check if y is within this layout's vertical bounds
-        if (y >= rect.position.y && y < rect.position.y + lineHeight) {
+        if (y >= rect.position.y && y < rect.position.y + layoutHeight) {
             hitLayout = layout;
             hitDOMStart = layoutDOMPos;
             break;
@@ -215,9 +217,11 @@ int MarkdownRenderer::hitTest(float x, float y) const {
         float minDist = 1e9f;
         for (const auto& [layout, layoutDOMPos] : textLayouts) {
             const Rect& rect = layout->getRect();
-            float fontSize = layout->getFontSize();
-            float lineHeight = fontSize;
-            float centerY = rect.position.y + lineHeight / 2;
+            float layoutHeight = rect.size.height;
+            if (layoutHeight <= 0) {
+                layoutHeight = layout->getFontSize();
+            }
+            float centerY = rect.position.y + layoutHeight / 2;
             float dist = std::abs(y - centerY);
             if (dist < minDist) {
                 minDist = dist;
@@ -339,6 +343,55 @@ void MarkdownRenderer::getCursorXY(int domPos, float& outX, float& outY) const {
             outX = rect.position.x;
         }
     }
+}
+
+std::string MarkdownRenderer::getLinkAtPosition(float x, float y) const {
+    if (!layoutTree) return "";
+
+    std::vector<std::pair<const TextLayoutObject*, int>> textLayouts;
+    int domPos = 0;
+    collectTextLayoutsWithPos(layoutTree.get(), textLayouts, domPos);
+
+    // Find which text layout contains the click point
+    for (const auto& [layout, layoutDOMPos] : textLayouts) {
+        const Rect& rect = layout->getRect();
+        float fontSize = layout->getFontSize();
+        const auto& lines = layout->getLines();
+        const auto& linkRanges = layout->getLinkRanges();
+
+        if (linkRanges.empty()) continue;
+
+        // Check each line
+        for (const auto& line : lines) {
+            float lineY = rect.position.y + line.yOffset;
+            float lineHeight = fontSize;
+
+            if (y >= lineY && y < lineY + lineHeight) {
+                // Click is on this line - find character position
+                float relX = x - rect.position.x;
+                int charPos = line.startChar;
+
+                // Find which character was clicked
+                for (int i = line.startChar; i < line.endChar; i++) {
+                    float charEndX = layout->getCharXOffsetInLine(i + 1);
+                    if (relX < charEndX) {
+                        charPos = i;
+                        break;
+                    }
+                    charPos = i;
+                }
+
+                // Check if this character is in a link range
+                for (const auto& lr : linkRanges) {
+                    if (charPos >= lr.startChar && charPos < lr.endChar) {
+                        return lr.url;
+                    }
+                }
+            }
+        }
+    }
+
+    return "";
 }
 
 int MarkdownRenderer::rawToDOM(int rawPos) const {

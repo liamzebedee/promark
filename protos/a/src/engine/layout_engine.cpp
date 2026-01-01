@@ -81,10 +81,16 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
     // Block flow layout - stack children vertically
     // Only root (Document) gets margins, children are positioned relative to parent
     bool isRoot = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::Document);
+    bool isBlockQuote = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::BlockQuote);
 
-    const float marginLeft = isRoot ? 50.0f : 0.0f;
+    float marginLeft = isRoot ? 50.0f : 0.0f;
     const float marginTop = isRoot ? 50.0f : 0.0f;
     const float blockSpacing = 10.0f;
+
+    // Blockquotes get extra left indent for the gray bar
+    if (isBlockQuote) {
+        marginLeft = 20.0f;  // Space for gray bar + padding
+    }
 
     float currentY = marginTop;
 
@@ -96,9 +102,13 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
         float childX = marginLeft;
         float childY = currentY;
 
-        // Set child position and propagate to grandchildren
+        // Set child position relative to this container
         child->setRect(Rect(childX, childY, childRect.size.width, childRect.size.height));
-        propagatePositionToChildren(child.get(), childX, childY);
+
+        // Only propagate absolute positions from the root to avoid double-applying offsets
+        if (isRoot) {
+            propagatePositionToChildren(child.get(), childX, childY);
+        }
 
         currentY += childRect.size.height + blockSpacing;
     }

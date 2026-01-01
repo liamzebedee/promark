@@ -4,7 +4,11 @@
     - feels like using word, but you own your own data (.md) files
     - written using native tech, not web electron crap. feels good, low on battery
     - like sublime text for typographic markdown writing.
-- shortcuts: copy-paste, ctrl+a, backspace, ctrl+up/down for quick scroll up/down
+- shortcuts: copy-paste, ctrl+a, backspace, ctrl+up/down for quick scroll up/down, cmd+left/right for select/delete left/right (works within a line)
+- selection/highlight
+    - cmd+shift+left/right for select left/right
+    - cmd+shift+up/down for select up/down of entire doc
+    - double click word to select
 - cursor, UI, and typing.
     - The cursor is a flashing indicator on the current line or block. 
     - Typing on the keyboard inserts characters at the position of the cursor, which re-renders. 
@@ -20,7 +24,10 @@
     - content is wrapped - ie. words follow to new lines. tables/images are scaled.
 - command-line usage
     - `promark file.md` simply to edit file
-
+- formatting
+    - links render
+    - blockquotes render
+    
 
 
 use cases/markets:
