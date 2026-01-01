@@ -25,8 +25,15 @@ public:
     void handleMouse(int button, int action, int mods, double x, double y);
     void handleMouseMove(double x, double y);
 
+    // File operations
+    void setContent(const std::string& content);
+    std::string getContent() const;
+    bool isDirty() const { return dirty; }
+    void markClean() { dirty = false; }
+
 private:
     bool leftMouseHeld;
+    bool dirty;
     float scrollOffset;
     float scrollVelocity;
     float contentHeight;
@@ -37,6 +44,7 @@ private:
     
     // Text editing state
     int cursorPos;
+    int goalColumn;  // Remembered column for vertical navigation
     int selectionStart;
     int selectionEnd;
     bool hasSelection;

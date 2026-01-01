@@ -6,9 +6,9 @@
 #include <algorithm>
 #include <cmath>
 
-Engine::Engine() : leftMouseHeld(false), scrollOffset(0.0f), scrollVelocity(0.0f),
+Engine::Engine() : leftMouseHeld(false), dirty(false), scrollOffset(0.0f), scrollVelocity(0.0f),
                    contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
-                   fontLoaded(false), cursorPos(0), selectionStart(0), selectionEnd(0), hasSelection(false),
+                   fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
                    caretAnimX(0), caretAnimY(0), caretVelX(0), caretVelY(0),
                    caretTargetX(0), caretTargetY(0), lastBlinkTime(0), caretVisible(true) {
     // Allocate 10MB input buffer
@@ -270,17 +270,43 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
         }
 
         if (key == GLFW_KEY_ESCAPE) {
-            glfwSetWindowShouldClose(glfwGetCurrentContext(), GLFW_TRUE);
+            // Cancel selection, never close window
+            hasSelection = false;
+            return;
             
         } else if (key == GLFW_KEY_LEFT) {
-            if (alt) {
+            if (cmdOrCtrl) {
+                // Cmd/Ctrl+Left: select to start of line
+                int lineStart = findLineStart(cursorPos);
+                if (!hasSelection) {
+                    selectionStart = cursorPos;
+                }
+                selectionEnd = lineStart;
+                hasSelection = (selectionStart != selectionEnd);
+                cursorPos = lineStart;
+                lastBlinkTime = glfwGetTime();
+                caretVisible = true;
+                ensureCursorVisible();
+            } else if (alt) {
                 moveCursorByWord(-1, shift);
             } else {
                 moveCursor(-1, shift);
             }
-            
+
         } else if (key == GLFW_KEY_RIGHT) {
-            if (alt) {
+            if (cmdOrCtrl) {
+                // Cmd/Ctrl+Right: select to end of line
+                int lineEnd = findLineEnd(cursorPos);
+                if (!hasSelection) {
+                    selectionStart = cursorPos;
+                }
+                selectionEnd = lineEnd;
+                hasSelection = (selectionStart != selectionEnd);
+                cursorPos = lineEnd;
+                lastBlinkTime = glfwGetTime();
+                caretVisible = true;
+                ensureCursorVisible();
+            } else if (alt) {
                 moveCursorByWord(1, shift);
             } else {
                 moveCursor(1, shift);
@@ -327,6 +353,7 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
                 inputLength -= (end - start);
                 cursorPos = start;
+                goalColumn = getColumnInLine(cursorPos);
                 hasSelection = false;
 
                 // Update markdown content
@@ -351,6 +378,7 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                     inputLength--;
                     cursorPos--;
                 }
+                goalColumn = getColumnInLine(cursorPos);
 
                 if (textBuffer && markdownRenderer) {
                     std::string newText(inputBuffer, inputLength);
@@ -471,6 +499,7 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                 float contentY = static_cast<float>(y) + scrollOffset;
                 cursorPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
                 cursorPos = std::max(0, std::min(cursorPos, inputLength));
+                goalColumn = getColumnInLine(cursorPos);
                 selectionStart = cursorPos;
                 selectionEnd = cursorPos;
                 hasSelection = false;
@@ -606,20 +635,33 @@ void Engine::renderText(const char* text, float x, float y) {
 }
 
 void Engine::moveCursor(int delta, bool extendSelection) {
-    int newPos = cursorPos + delta;
-    newPos = std::max(0, std::min(newPos, inputLength));
+    int newPos;
 
     if (extendSelection) {
+        newPos = cursorPos + delta;
+        newPos = std::max(0, std::min(newPos, inputLength));
         if (!hasSelection) {
             selectionStart = cursorPos;
             hasSelection = true;
         }
         selectionEnd = newPos;
-    } else {
+    } else if (hasSelection) {
+        // Cancel selection: jump to start or end of selection
+        if (delta > 0) {
+            // Right arrow: go to end of selection
+            newPos = std::max(selectionStart, selectionEnd);
+        } else {
+            // Left arrow: go to start of selection
+            newPos = std::min(selectionStart, selectionEnd);
+        }
         hasSelection = false;
+    } else {
+        newPos = cursorPos + delta;
+        newPos = std::max(0, std::min(newPos, inputLength));
     }
 
     cursorPos = newPos;
+    goalColumn = getColumnInLine(cursorPos);
 
     // Reset blink timer
     lastBlinkTime = glfwGetTime();
@@ -628,7 +670,7 @@ void Engine::moveCursor(int delta, bool extendSelection) {
 
 void Engine::moveCursorByWord(int direction, bool extendSelection) {
     int newPos = findWordBoundary(cursorPos, direction);
-    
+
     if (extendSelection) {
         if (!hasSelection) {
             selectionStart = cursorPos;
@@ -638,8 +680,9 @@ void Engine::moveCursorByWord(int direction, bool extendSelection) {
     } else {
         hasSelection = false;
     }
-    
+
     cursorPos = newPos;
+    goalColumn = getColumnInLine(cursorPos);  // Update goal column
 }
 
 int Engine::findWordBoundary(int pos, int direction) {
@@ -685,6 +728,7 @@ void Engine::insertChar(char c) {
         // Reset blink timer so cursor is visible after typing
         lastBlinkTime = glfwGetTime();
         caretVisible = true;
+        goalColumn = getColumnInLine(cursorPos);
     }
 }
 
@@ -695,13 +739,14 @@ void Engine::deleteChar() {
         memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
         inputLength--;
         cursorPos--;
-        
+
         // Update markdown content
         if (textBuffer && markdownRenderer) {
             std::string newText(inputBuffer, inputLength);
             textBuffer->setText(newText);
             markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
         }
+        goalColumn = getColumnInLine(cursorPos);
     }
 }
 
@@ -722,6 +767,7 @@ void Engine::deleteWordBackward() {
                 textBuffer->setText(newText);
                 markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
             }
+            goalColumn = getColumnInLine(cursorPos);
         }
     }
 }
@@ -754,7 +800,6 @@ int Engine::findPositionInLine(int lineStart, int column) {
 
 void Engine::moveCursorVertically(int direction, bool extendSelection) {
     int currentLineStart = findLineStart(cursorPos);
-    int column = getColumnInLine(cursorPos);
     int newPos = cursorPos;
 
     if (direction < 0) {
@@ -762,14 +807,14 @@ void Engine::moveCursorVertically(int direction, bool extendSelection) {
         if (currentLineStart > 0) {
             int prevLineEnd = currentLineStart - 1;
             int prevLineStart = findLineStart(prevLineEnd);
-            newPos = findPositionInLine(prevLineStart, column);
+            newPos = findPositionInLine(prevLineStart, goalColumn);
         }
     } else {
         // Move down
         int currentLineEnd = findLineEnd(cursorPos);
         if (currentLineEnd < inputLength) {
             int nextLineStart = currentLineEnd + 1;
-            newPos = findPositionInLine(nextLineStart, column);
+            newPos = findPositionInLine(nextLineStart, goalColumn);
         }
     }
 
@@ -784,6 +829,11 @@ void Engine::moveCursorVertically(int direction, bool extendSelection) {
     }
 
     cursorPos = newPos;
+
+    // Reset blink timer and ensure cursor visible
+    lastBlinkTime = glfwGetTime();
+    caretVisible = true;
+    ensureCursorVisible();
 }
 
 void Engine::selectAll() {
@@ -891,6 +941,29 @@ void Engine::saveUndoState() {
     if (undoStack.size() > MAX_UNDO) {
         undoStack.erase(undoStack.begin());
     }
+
+    dirty = true;
+}
+
+void Engine::setContent(const std::string& content) {
+    size_t len = std::min(content.length(), (size_t)(INPUT_BUFFER_SIZE - 1));
+    memcpy(inputBuffer, content.c_str(), len);
+    inputBuffer[len] = '\0';
+    inputLength = len;
+    cursorPos = 0;
+    goalColumn = 0;
+    hasSelection = false;
+    undoStack.clear();
+    dirty = false;
+
+    if (textBuffer && markdownRenderer) {
+        textBuffer->setText(content);
+        markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+    }
+}
+
+std::string Engine::getContent() const {
+    return std::string(inputBuffer, inputLength);
 }
 
 void Engine::undo() {
@@ -904,6 +977,7 @@ void Engine::undo() {
     inputBuffer[state.text.length()] = '\0';
     inputLength = state.text.length();
     cursorPos = std::min(state.cursorPos, inputLength);
+    goalColumn = getColumnInLine(cursorPos);
     hasSelection = false;
 
     // Update markdown content

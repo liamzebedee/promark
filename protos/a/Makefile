@@ -26,8 +26,9 @@ LDFLAGS = -L$(GLFW_BUILD_DIR)/install/lib \
 	-framework OpenGL -framework Cocoa -framework IOKit -framework CoreVideo
 
 TARGET = $(BUILD_DIR)/mdeditor
-SOURCES = $(SRC_DIR)/main.cpp \
-	$(SRC_DIR)/engine/engine.cpp \
+TARGET_EDIT = $(BUILD_DIR)/mdedit
+
+ENGINE_SOURCES = $(SRC_DIR)/engine/engine.cpp \
 	$(SRC_DIR)/engine/text_buffer.cpp \
 	$(SRC_DIR)/engine/clipboard.cpp \
 	$(SRC_DIR)/engine/markdown_objects.cpp \
@@ -39,7 +40,10 @@ SOURCES = $(SRC_DIR)/main.cpp \
 	$(SRC_DIR)/engine/rasterizer.cpp \
 	$(SRC_DIR)/engine/markdown_renderer.cpp
 
-all: deps $(TARGET)
+SOURCES = $(SRC_DIR)/main.cpp $(ENGINE_SOURCES)
+SOURCES_EDIT = $(SRC_DIR)/edit.cpp $(ENGINE_SOURCES)
+
+all: deps $(TARGET) $(TARGET_EDIT)
 
 deps:
 	@if [ ! -d "$(GLFW_BUILD_DIR)" ] || [ ! -d "$(FREETYPE_BUILD_DIR)" ] || [ ! -d "$(HARFBUZZ_BUILD_DIR)" ]; then \
@@ -50,11 +54,14 @@ deps:
 $(TARGET): $(SOURCES) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) $(SOURCES) -o $(TARGET) $(LDFLAGS)
 
+$(TARGET_EDIT): $(SOURCES_EDIT) | $(BUILD_DIR)
+	$(CXX) $(CXXFLAGS) $(SOURCES_EDIT) -o $(TARGET_EDIT) $(LDFLAGS)
+
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) $(TARGET_EDIT)
 	rmdir $(BUILD_DIR) 2>/dev/null || true
 
 clean-all: clean
