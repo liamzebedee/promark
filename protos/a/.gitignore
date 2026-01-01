@@ -1,1 +1,11 @@
 resources/big-file.md
+
+# Build artifacts
+build/
+
+# Vendor dependencies (downloaded on demand)
+vendor/
+
+# Web build
+web/build/
+web/fonts/

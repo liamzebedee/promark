@@ -1,9 +1,0 @@
-Loaded font: /System/Library/Fonts/Helvetica.ttc
-OpenGL Version: 2.1 Metal - 88.1
-OpenGL Vendor: Apple
-OpenGL Renderer: Apple M2
-Loaded font: /System/Library/Fonts/Helvetica.ttc
-Engine initialized successfully
-HEADING: Welcome to Markdown Editor fontSize=32
-BODY:  fontSize=16
-BODY: This is a paragraph of body text that should appear smaller than the heading above. fontSize=16

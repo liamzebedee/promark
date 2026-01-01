@@ -1,64 +1,25 @@
 #include "batch_renderer.h"
 #include "utf8.h"
+#ifdef __EMSCRIPTEN__
+#include <GLES2/gl2.h>
+#else
 #include <OpenGL/gl.h>
+#endif
 #include <cstring>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
-// GLSL 1.20 shaders (OpenGL 2.1 compatible)
-static const char* textVertexShader = R"(
-#version 120
-attribute vec2 a_position;
-attribute vec2 a_texcoord;
-attribute vec4 a_color;
-
-uniform mat4 u_projection;
-
-varying vec2 v_texcoord;
-varying vec4 v_color;
-
-void main() {
-    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
-    v_texcoord = a_texcoord;
-    v_color = a_color;
+static std::string loadShaderFile(const char* path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        std::cerr << "Failed to load shader: " << path << std::endl;
+        return "";
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    return buffer.str();
 }
-)";
-
-static const char* textFragmentShader = R"(
-#version 120
-varying vec2 v_texcoord;
-varying vec4 v_color;
-
-uniform sampler2D u_texture;
-
-void main() {
-    float alpha = texture2D(u_texture, v_texcoord).a;
-    gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);
-}
-)";
-
-static const char* solidVertexShader = R"(
-#version 120
-attribute vec2 a_position;
-attribute vec4 a_color;
-
-uniform mat4 u_projection;
-
-varying vec4 v_color;
-
-void main() {
-    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
-    v_color = a_color;
-}
-)";
-
-static const char* solidFragmentShader = R"(
-#version 120
-varying vec4 v_color;
-
-void main() {
-    gl_FragColor = v_color;
-}
-)";
 
 BatchRenderer::BatchRenderer()
     : textProg(0), solidProg(0), vbo(0), viewportW(800), viewportH(600),
@@ -73,14 +34,35 @@ BatchRenderer::~BatchRenderer() {
 }
 
 bool BatchRenderer::init() {
+    // Load shader sources from files
+#ifdef __EMSCRIPTEN__
+    const char* shaderPath = "/shaders/";
+    const char* vertPreamble = "";
+    const char* fragPreamble = "precision mediump float;\n";
+#else
+    const char* shaderPath = "src/engine/shaders/";
+    const char* vertPreamble = "#version 120\n";
+    const char* fragPreamble = "#version 120\n";
+#endif
+
+    std::string textVS = vertPreamble + loadShaderFile((std::string(shaderPath) + "text.vert").c_str());
+    std::string textFS = fragPreamble + loadShaderFile((std::string(shaderPath) + "text.frag").c_str());
+    std::string solidVS = vertPreamble + loadShaderFile((std::string(shaderPath) + "solid.vert").c_str());
+    std::string solidFS = fragPreamble + loadShaderFile((std::string(shaderPath) + "solid.frag").c_str());
+
+    const char* textVSrc = textVS.c_str();
+    const char* textFSrc = textFS.c_str();
+    const char* solidVSrc = solidVS.c_str();
+    const char* solidFSrc = solidFS.c_str();
+
     // Compile shaders with attribute bindings
     // Text shader
     unsigned int tvs = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(tvs, 1, &textVertexShader, nullptr);
+    glShaderSource(tvs, 1, &textVSrc, nullptr);
     glCompileShader(tvs);
 
     unsigned int tfs = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(tfs, 1, &textFragmentShader, nullptr);
+    glShaderSource(tfs, 1, &textFSrc, nullptr);
     glCompileShader(tfs);
 
     unsigned int tprog = glCreateProgram();
@@ -95,11 +77,11 @@ bool BatchRenderer::init() {
 
     // Solid shader
     unsigned int svs = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(svs, 1, &solidVertexShader, nullptr);
+    glShaderSource(svs, 1, &solidVSrc, nullptr);
     glCompileShader(svs);
 
     unsigned int sfs = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(sfs, 1, &solidFragmentShader, nullptr);
+    glShaderSource(sfs, 1, &solidFSrc, nullptr);
     glCompileShader(sfs);
 
     unsigned int sprog = glCreateProgram();

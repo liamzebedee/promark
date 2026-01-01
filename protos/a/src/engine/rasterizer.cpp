@@ -1,6 +1,10 @@
 #include "rasterizer.h"
 #include "utf8.h"
+#ifdef __EMSCRIPTEN__
+#include <GLES2/gl2.h>
+#else
 #include <OpenGL/gl.h>
+#endif
 #include <map>
 #include <iostream>
 #include <cmath>
@@ -373,6 +377,12 @@ bool Rasterizer::initializeFont() {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Load embedded fonts for web build
+    const char* fontPaths[] = {
+        "/fonts/NotoSans-Regular.ttf"
+    };
+#else
     // Try to load system fonts (TTC files have multiple faces)
     const char* fontPaths[] = {
         "/System/Library/Fonts/Helvetica.ttc",
@@ -380,6 +390,7 @@ bool Rasterizer::initializeFont() {
         "/Library/Fonts/Arial.ttf",
         "/System/Library/Fonts/Times.ttc"
     };
+#endif
 
     for (const char* fontPath : fontPaths) {
         if (loadFontFamily(fontPath)) {
@@ -405,6 +416,12 @@ bool Rasterizer::loadFontFamily(const char* fontPath) {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Load separate font files for web build
+    loadFont("/fonts/NotoSans-Bold.ttf", 0, &faceBold);
+    loadFont("/fonts/NotoSans-Italic.ttf", 0, &faceItalic);
+    loadFont("/fonts/NotoSans-BoldItalic.ttf", 0, &faceBoldItalic);
+#else
     // For TTC files, try to load bold (index 1), italic (index 2), bold-italic (index 3)
     // If they fail, we'll use synthetic styles
     std::string path(fontPath);
@@ -420,6 +437,7 @@ bool Rasterizer::loadFontFamily(const char* fontPath) {
         loadFont(fontPath, 2, &faceItalic);
         loadFont(fontPath, 3, &faceBoldItalic);
     }
+#endif
 
     // Fallback: if bold/italic not loaded, use regular for all
     if (!faceBold) faceBold = faceRegular;
@@ -431,12 +449,18 @@ bool Rasterizer::loadFontFamily(const char* fontPath) {
 }
 
 bool Rasterizer::loadMonoFont() {
+#ifdef __EMSCRIPTEN__
+    const char* monoFontPaths[] = {
+        "/fonts/NotoSansMono-Regular.ttf"
+    };
+#else
     const char* monoFontPaths[] = {
         "/System/Library/Fonts/Menlo.ttc",
         "/System/Library/Fonts/Monaco.dfont",
         "/System/Library/Fonts/Courier.dfont",
         "/Library/Fonts/Courier New.ttf"
     };
+#endif
 
     for (const char* monoPath : monoFontPaths) {
         if (loadFont(monoPath, 0, &faceMono)) {

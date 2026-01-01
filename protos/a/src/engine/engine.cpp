@@ -1,5 +1,9 @@
 #include "engine.h"
+#ifdef __EMSCRIPTEN__
+#include <GLES2/gl2.h>
+#else
 #include <OpenGL/gl.h>
+#endif
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <cstring>
@@ -15,35 +19,12 @@ Engine::Engine() : wantsToClose(false), leftMouseHeld(false), dirty(false), last
     // Allocate 10MB input buffer
     inputBuffer = new char[INPUT_BUFFER_SIZE];
     memset(inputBuffer, 0, INPUT_BUFFER_SIZE);
+    inputLength = 0;
+    cursorPos = 0;
 
     // Initialize markdown rendering system
     markdownRenderer = std::make_unique<MarkdownRenderer>();
     textBuffer = std::make_unique<TextBuffer>();
-
-    // Set up initial markdown content with enough to scroll
-    std::string initialContent =
-        "# Welcome to Markdown Editor\n\n"
-        "This is a paragraph of body text that demonstrates word wrapping.\n\n"
-        "Here is another paragraph with more content.\n\n"
-        "## Getting Started\n\n"
-        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\n"
-        "Sed do eiusmod tempor incididunt ut labore et dolore.\n\n"
-        "## Features\n\n"
-        "Duis aute irure dolor in reprehenderit in voluptate.\n\n"
-        "Excepteur sint occaecat cupidatat non proident.\n\n"
-        "## More Content\n\n"
-        "Sunt in culpa qui officia deserunt mollit anim.\n\n"
-        "Ut enim ad minim veniam quis nostrud exercitation.\n\n"
-        "## Final Section\n\n"
-        "At vero eos et accusamus et iusto odio dignissimos.\n\n"
-        "End of document.";
-
-    // Copy to input buffer for editing
-    strncpy(inputBuffer, initialContent.c_str(), INPUT_BUFFER_SIZE - 1);
-    inputLength = initialContent.length();
-    cursorPos = 0;
-
-    textBuffer->setText(initialContent);
     markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
 }
 
@@ -66,22 +47,31 @@ bool Engine::initialize() {
     
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_TEXTURE_2D);
-    
+#ifndef __EMSCRIPTEN__
+    glEnable(GL_TEXTURE_2D);  // Not needed/valid in ES 2.0
+#endif
+
     // Initialize FreeType
     if (!initFreeType()) {
         std::cerr << "Failed to initialize FreeType" << std::endl;
         return false;
     }
-    
+
+#ifdef __EMSCRIPTEN__
+    // Load embedded fonts for web build
+    const char* fontPaths[] = {
+        "/fonts/NotoSans-Regular.ttf"
+    };
+#else
     // Try to load system font (Helvetica or Arial)
     const char* fontPaths[] = {
         "/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Arial.ttf", 
+        "/System/Library/Fonts/Arial.ttf",
         "/Library/Fonts/Arial.ttf",
         "/System/Library/Fonts/Times.ttc" // fallback
     };
-    
+#endif
+
     bool fontLoadedSuccessfully = false;
     for (const char* fontPath : fontPaths) {
         if (loadFont(fontPath)) {
@@ -90,12 +80,18 @@ bool Engine::initialize() {
             break;
         }
     }
-    
+
     if (!fontLoadedSuccessfully) {
         std::cerr << "Failed to load any system font" << std::endl;
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // Load embedded monospace font for web build
+    const char* monoFontPaths[] = {
+        "/fonts/NotoSansMono-Regular.ttf"
+    };
+#else
     // Load monospace font for code blocks
     const char* monoFontPaths[] = {
         "/System/Library/Fonts/Menlo.ttc",
@@ -103,6 +99,7 @@ bool Engine::initialize() {
         "/System/Library/Fonts/Courier.dfont",
         "/Library/Fonts/Courier New.ttf"
     };
+#endif
 
     monoFace = nullptr;
     for (const char* monoPath : monoFontPaths) {

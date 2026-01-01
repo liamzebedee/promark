@@ -7,6 +7,9 @@ LIBJPEG_BUILD_DIR = $(VENDOR_DIR)/libjpeg-turbo-build
 SRC_DIR = src
 BUILD_DIR = build
 
+# Shared source list
+include sources.mk
+
 # Optimization: use 'make release' or 'make OPT=1'
 ifdef OPT
 OPTFLAGS = -O3 -DNDEBUG -flto
@@ -36,22 +39,8 @@ LDFLAGS = -L$(GLFW_BUILD_DIR)/install/lib \
 TARGET = $(BUILD_DIR)/mdeditor
 TARGET_EDIT = $(BUILD_DIR)/mdedit
 
-ENGINE_SOURCES = $(SRC_DIR)/engine/engine.cpp \
-	$(SRC_DIR)/engine/text_buffer.cpp \
-	$(SRC_DIR)/engine/clipboard.cpp \
-	$(SRC_DIR)/engine/markdown_objects.cpp \
-	$(SRC_DIR)/engine/markdown_parser.cpp \
-	$(SRC_DIR)/engine/layout_objects.cpp \
-	$(SRC_DIR)/engine/layout_engine.cpp \
-	$(SRC_DIR)/engine/paint_operations.cpp \
-	$(SRC_DIR)/engine/painter.cpp \
-	$(SRC_DIR)/engine/rasterizer.cpp \
-	$(SRC_DIR)/engine/markdown_renderer.cpp \
-	$(SRC_DIR)/engine/glyph_atlas.cpp \
-	$(SRC_DIR)/engine/batch_renderer.cpp
-
-SOURCES = $(SRC_DIR)/main.cpp $(ENGINE_SOURCES)
-SOURCES_EDIT = $(SRC_DIR)/edit.cpp $(ENGINE_SOURCES)
+SOURCES = $(SRC_DIR)/main.cpp $(ENGINE_SRC)
+SOURCES_EDIT = $(SRC_DIR)/edit.cpp $(ENGINE_SRC)
 
 all: deps $(TARGET) $(TARGET_EDIT)
 
