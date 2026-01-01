@@ -200,7 +200,7 @@ int MarkdownRenderer::hitTest(float x, float y) const {
     for (const auto& [layout, layoutDOMPos] : textLayouts) {
         const Rect& rect = layout->getRect();
         float fontSize = layout->getFontSize();
-        float lineHeight = fontSize * 1.2f;
+        float lineHeight = fontSize;
 
         // Check if y is within this layout's vertical bounds
         if (y >= rect.position.y && y < rect.position.y + lineHeight) {
@@ -216,7 +216,7 @@ int MarkdownRenderer::hitTest(float x, float y) const {
         for (const auto& [layout, layoutDOMPos] : textLayouts) {
             const Rect& rect = layout->getRect();
             float fontSize = layout->getFontSize();
-            float lineHeight = fontSize * 1.2f;
+            float lineHeight = fontSize;
             float centerY = rect.position.y + lineHeight / 2;
             float dist = std::abs(y - centerY);
             if (dist < minDist) {
@@ -274,7 +274,7 @@ float MarkdownRenderer::getCursorY(int domPos) const {
             // Found the layout containing this position
             const Rect& rect = layout->getRect();
             float fontSize = layout->getFontSize();
-            float lineHeight = fontSize * 1.2f;
+            float lineHeight = fontSize;
             return rect.position.y + lineHeight;  // Return bottom of line
         }
     }
@@ -284,10 +284,61 @@ float MarkdownRenderer::getCursorY(int domPos) const {
         const auto& [layout, layoutDOMPos] = textLayouts.back();
         const Rect& rect = layout->getRect();
         float fontSize = layout->getFontSize();
-        return rect.position.y + fontSize * 1.2f;
+        return rect.position.y + fontSize;
     }
 
     return 0;
+}
+
+void MarkdownRenderer::getCursorXY(int domPos, float& outX, float& outY) const {
+    outX = 0;
+    outY = 0;
+    if (!layoutTree) return;
+
+    std::vector<std::pair<const TextLayoutObject*, int>> textLayouts;
+    int pos = 0;
+    collectTextLayoutsWithPos(layoutTree.get(), textLayouts, pos);
+
+    for (const auto& [layout, layoutDOMPos] : textLayouts) {
+        int domLen = layout->getDOMLength();
+        if (domPos >= layoutDOMPos && domPos <= layoutDOMPos + domLen) {
+            const Rect& rect = layout->getRect();
+            int localOffset = domPos - layoutDOMPos;
+
+            const auto& lines = layout->getLines();
+            if (!lines.empty() && localOffset >= 0) {
+                int lineIdx = layout->getLineForChar(localOffset);
+                const auto& line = lines[lineIdx];
+                outY = rect.position.y + line.yOffset;
+                outX = rect.position.x;
+                if (localOffset > line.startChar) {
+                    outX += layout->getCharXOffsetInLine(localOffset);
+                }
+            } else {
+                outY = rect.position.y;
+                outX = rect.position.x;
+                if (localOffset > 0 && localOffset <= layout->getCharCount()) {
+                    outX += layout->getCharXOffset(localOffset - 1);
+                }
+            }
+            return;
+        }
+    }
+
+    // Position beyond end
+    if (!textLayouts.empty()) {
+        const auto& [layout, layoutDOMPos] = textLayouts.back();
+        (void)layoutDOMPos;
+        const Rect& rect = layout->getRect();
+        const auto& lines = layout->getLines();
+        if (!lines.empty()) {
+            outY = rect.position.y + lines.back().yOffset;
+            outX = rect.position.x + lines.back().width;
+        } else {
+            outY = rect.position.y;
+            outX = rect.position.x;
+        }
+    }
 }
 
 int MarkdownRenderer::rawToDOM(int rawPos) const {

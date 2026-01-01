@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <cmath>
 
-Engine::Engine() : leftMouseHeld(false), scrollOffset(0.0f), contentHeight(0.0f),
-                   viewportHeight(0), inputBuffer(nullptr), inputLength(0), fontLoaded(false),
-                   cursorPos(0), selectionStart(0), selectionEnd(0), hasSelection(false) {
+Engine::Engine() : leftMouseHeld(false), scrollOffset(0.0f), scrollVelocity(0.0f),
+                   contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
+                   fontLoaded(false), cursorPos(0), selectionStart(0), selectionEnd(0), hasSelection(false),
+                   caretAnimX(0), caretAnimY(0), caretVelX(0), caretVelY(0),
+                   caretTargetX(0), caretTargetY(0), lastBlinkTime(0), caretVisible(true) {
     // Allocate 10MB input buffer
     inputBuffer = new char[INPUT_BUFFER_SIZE];
     memset(inputBuffer, 0, INPUT_BUFFER_SIZE);
@@ -112,6 +114,22 @@ bool Engine::initialize() {
 void Engine::render(int width, int height) {
     viewportHeight = height;
 
+    // Simple momentum scrolling
+    float maxScroll = std::max(0.0f, contentHeight - height);
+
+    scrollVelocity *= 0.9f;
+    scrollOffset += scrollVelocity;
+
+    // Hard clamp
+    if (scrollOffset < 0) {
+        scrollOffset = 0;
+        scrollVelocity = 0;
+    }
+    if (scrollOffset > maxScroll) {
+        scrollOffset = maxScroll;
+        scrollVelocity = 0;
+    }
+
     glViewport(0, 0, width, height);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -130,17 +148,31 @@ void Engine::render(int width, int height) {
         int domSelStart = markdownRenderer->rawToDOM(selectionStart);
         int domSelEnd = markdownRenderer->rawToDOM(selectionEnd);
 
+        // Update cursor blink (530ms cycle)
+        double currentTime = glfwGetTime();
+        if (currentTime - lastBlinkTime > 0.53) {
+            caretVisible = !caretVisible;
+            lastBlinkTime = currentTime;
+        }
+
         CaretState caret;
         caret.cursorPosition = domCursorPos;
         caret.selectionStart = domSelStart;
         caret.selectionEnd = domSelEnd;
         caret.hasSelection = hasSelection;
+        caret.caretVisible = caretVisible && !hasSelection;
+        caret.animatedCaretX = caretAnimX;
+        caret.animatedCaretY = caretAnimY;
+        caret.useAnimatedPosition = true;
         markdownRenderer->setCaretState(caret);
 
         Size viewportSize(width, height);
         markdownRenderer->render(viewportSize);
 
         contentHeight = markdownRenderer->getContentHeight();
+
+        // Update animated cursor position (lerp toward target)
+        updateCaretAnimation();
     }
 
     // Reset transform for scrollbar (fixed position UI)
@@ -153,23 +185,38 @@ void Engine::render(int width, int height) {
         float trackX = width - scrollbarWidth - margin;
         float trackHeight = height - margin * 2;
 
-        // Thumb size proportional to visible area
+        // Thumb size - shrinks when overscrolling
         float visibleRatio = (float)height / contentHeight;
-        float thumbHeight = std::max(40.0f, trackHeight * visibleRatio);
+        float baseThumbHeight = std::max(40.0f, trackHeight * visibleRatio);
+        float thumbHeight = baseThumbHeight;
 
-        // Thumb position
-        float maxScroll = contentHeight - height;
+        // Shrink thumb during overscroll
+        float overscroll = std::max(-scrollOffset, scrollOffset - maxScroll);
+        if (overscroll > 0) {
+            float shrinkFactor = 1.0f / (1.0f + overscroll * 0.005f);
+            thumbHeight = baseThumbHeight * shrinkFactor;
+            thumbHeight = std::max(20.0f, thumbHeight);
+        }
+
+        // Thumb position - clamp ratio but allow visual feedback
         float scrollRatio = (maxScroll > 0) ? scrollOffset / maxScroll : 0;
-        scrollRatio = std::max(0.0f, std::min(1.0f, scrollRatio));
-        float thumbY = margin + scrollRatio * (trackHeight - thumbHeight);
+        float thumbY;
+        if (scrollRatio < 0) {
+            // Overscrolled past top - thumb stays at top but shrinks
+            thumbY = margin;
+        } else if (scrollRatio > 1) {
+            // Overscrolled past bottom - thumb stays at bottom
+            thumbY = margin + trackHeight - thumbHeight;
+        } else {
+            thumbY = margin + scrollRatio * (trackHeight - thumbHeight);
+        }
 
         glDisable(GL_TEXTURE_2D);
 
-        // Thumb with rounded appearance (draw as pill shape using circles at ends)
+        // Thumb with rounded appearance
         float radius = scrollbarWidth / 2.0f;
         float centerX = trackX + radius;
 
-        // Main thumb body
         glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
         glBegin(GL_QUADS);
         glVertex2f(trackX, thumbY + radius);
@@ -178,7 +225,7 @@ void Engine::render(int width, int height) {
         glVertex2f(trackX, thumbY + thumbHeight - radius);
         glEnd();
 
-        // Top cap (approximate circle with triangle fan)
+        // Top cap
         glBegin(GL_TRIANGLE_FAN);
         glVertex2f(centerX, thumbY + radius);
         for (int i = 0; i <= 12; i++) {
@@ -215,6 +262,9 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 return;
             } else if (key == GLFW_KEY_V) {
                 paste();
+                return;
+            } else if (key == GLFW_KEY_Z) {
+                undo();
                 return;
             }
         }
@@ -271,6 +321,7 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (hasSelection) {
                 // Delete selection
+                saveUndoState();
                 int start = std::min(selectionStart, selectionEnd);
                 int end = std::max(selectionStart, selectionEnd);
                 memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
@@ -279,6 +330,28 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 hasSelection = false;
 
                 // Update markdown content
+                if (textBuffer && markdownRenderer) {
+                    std::string newText(inputBuffer, inputLength);
+                    textBuffer->setText(newText);
+                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+                }
+            } else if (cmdOrCtrl && cursorPos > 0) {
+                // Cmd/Ctrl+Backspace: delete to start of line
+                saveUndoState();
+                int lineStart = findLineStart(cursorPos);
+                if (lineStart < cursorPos) {
+                    // Delete from cursor to start of line
+                    int deleteCount = cursorPos - lineStart;
+                    memmove(inputBuffer + lineStart, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+                    inputLength -= deleteCount;
+                    cursorPos = lineStart;
+                } else if (cursorPos > 0) {
+                    // Already at start of line - delete the newline to merge with previous line
+                    memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+                    inputLength--;
+                    cursorPos--;
+                }
+
                 if (textBuffer && markdownRenderer) {
                     std::string newText(inputBuffer, inputLength);
                     textBuffer->setText(newText);
@@ -294,6 +367,7 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
         } else if (key == GLFW_KEY_DELETE) {
             if (hasSelection) {
                 // Delete selection
+                saveUndoState();
                 int start = std::min(selectionStart, selectionEnd);
                 int end = std::max(selectionStart, selectionEnd);
                 memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
@@ -308,6 +382,7 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                     markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
                 }
             } else if (cursorPos < inputLength) {
+                saveUndoState();
                 memmove(inputBuffer + cursorPos, inputBuffer + cursorPos + 1, inputLength - cursorPos);
                 inputLength--;
                 inputBuffer[inputLength] = '\0';
@@ -382,14 +457,7 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
 
 void Engine::handleScroll(double xoffset, double yoffset) {
     (void)xoffset;
-
-    // Scroll down = negative yoffset = increase scrollOffset
-    scrollOffset -= yoffset * 40.0f;
-
-    // Clamp to valid range
-    float maxScroll = std::max(0.0f, contentHeight - viewportHeight);
-    if (scrollOffset < 0) scrollOffset = 0;
-    if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+    scrollVelocity += -yoffset * 15.0f;
 }
 
 void Engine::handleMouse(int button, int action, int mods, double x, double y) {
@@ -540,7 +608,7 @@ void Engine::renderText(const char* text, float x, float y) {
 void Engine::moveCursor(int delta, bool extendSelection) {
     int newPos = cursorPos + delta;
     newPos = std::max(0, std::min(newPos, inputLength));
-    
+
     if (extendSelection) {
         if (!hasSelection) {
             selectionStart = cursorPos;
@@ -550,8 +618,12 @@ void Engine::moveCursor(int delta, bool extendSelection) {
     } else {
         hasSelection = false;
     }
-    
+
     cursorPos = newPos;
+
+    // Reset blink timer
+    lastBlinkTime = glfwGetTime();
+    caretVisible = true;
 }
 
 void Engine::moveCursorByWord(int direction, bool extendSelection) {
@@ -584,6 +656,8 @@ int Engine::findWordBoundary(int pos, int direction) {
 }
 
 void Engine::insertChar(char c) {
+    saveUndoState();
+
     if (hasSelection) {
         // Replace selection
         int start = std::min(selectionStart, selectionEnd);
@@ -607,10 +681,16 @@ void Engine::insertChar(char c) {
             markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
         }
         ensureCursorVisible();
+
+        // Reset blink timer so cursor is visible after typing
+        lastBlinkTime = glfwGetTime();
+        caretVisible = true;
     }
 }
 
 void Engine::deleteChar() {
+    saveUndoState();
+
     if (cursorPos > 0) {
         memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
         inputLength--;
@@ -626,6 +706,8 @@ void Engine::deleteChar() {
 }
 
 void Engine::deleteWordBackward() {
+    saveUndoState();
+
     if (cursorPos > 0) {
         int wordStart = findWordBoundary(cursorPos, -1);
         int deleteCount = cursorPos - wordStart;
@@ -728,6 +810,8 @@ void Engine::paste() {
         return;
     }
 
+    saveUndoState();
+
     // Delete selection if present
     if (hasSelection) {
         int start = std::min(selectionStart, selectionEnd);
@@ -777,5 +861,59 @@ void Engine::ensureCursorVisible() {
     float maxScroll = std::max(0.0f, contentHeight - viewportHeight);
     if (scrollOffset < 0) scrollOffset = 0;
     if (scrollOffset > maxScroll) scrollOffset = maxScroll;
+}
+
+void Engine::updateCaretAnimation() {
+    if (!markdownRenderer) return;
+
+    // Get target position from renderer
+    int domPos = markdownRenderer->rawToDOM(cursorPos);
+    markdownRenderer->getCursorXY(domPos, caretTargetX, caretTargetY);
+
+    // Simple smooth lerp
+    float t = 0.4f;
+    caretAnimX += (caretTargetX - caretAnimX) * t;
+    caretAnimY += (caretTargetY - caretAnimY) * t;
+
+    // Snap when close
+    if (std::abs(caretTargetX - caretAnimX) < 0.5f) caretAnimX = caretTargetX;
+    if (std::abs(caretTargetY - caretAnimY) < 0.5f) caretAnimY = caretTargetY;
+}
+
+void Engine::saveUndoState() {
+    UndoState state;
+    state.text = std::string(inputBuffer, inputLength);
+    state.cursorPos = cursorPos;
+
+    undoStack.push_back(state);
+
+    // Limit undo stack size
+    if (undoStack.size() > MAX_UNDO) {
+        undoStack.erase(undoStack.begin());
+    }
+}
+
+void Engine::undo() {
+    if (undoStack.empty()) return;
+
+    UndoState state = undoStack.back();
+    undoStack.pop_back();
+
+    // Restore state
+    memcpy(inputBuffer, state.text.c_str(), state.text.length());
+    inputBuffer[state.text.length()] = '\0';
+    inputLength = state.text.length();
+    cursorPos = std::min(state.cursorPos, inputLength);
+    hasSelection = false;
+
+    // Update markdown content
+    if (textBuffer && markdownRenderer) {
+        textBuffer->setText(state.text);
+        markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+    }
+
+    // Reset blink
+    lastBlinkTime = glfwGetTime();
+    caretVisible = true;
 }
 

@@ -14,6 +14,10 @@ struct CaretState {
     int selectionStart = 0;
     int selectionEnd = 0;
     bool hasSelection = false;
+    bool caretVisible = true;  // For blinking
+    float animatedCaretX = 0;  // Animated position
+    float animatedCaretY = 0;
+    bool useAnimatedPosition = false;
 };
 
 class MarkdownRenderer {
@@ -47,6 +51,9 @@ public:
 
     // Get cursor Y position for auto-scroll
     float getCursorY(int domPos) const;
+
+    // Get cursor X/Y position for animation
+    void getCursorXY(int domPos, float& outX, float& outY) const;
 
 private:
     std::unique_ptr<TextBuffer> textBuffer;

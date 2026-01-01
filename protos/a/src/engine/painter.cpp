@@ -151,6 +151,9 @@ void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
     (void)text;
     (void)textLength;
 
+    // Skip if caret is not visible (blinking off)
+    if (!caret.caretVisible) return;
+
     // Find layout object for cursor position
     DOMPositionResult result = findLayoutForPosition(layoutRoot, caret.cursorPosition);
     if (!result.layout) return;
@@ -169,7 +172,7 @@ void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
         }
     } else if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(result.layout)) {
         // Text element - use glyph positions and line info
-        caretHeight = textLayout->getFontSize() * 1.2f;
+        caretHeight = textLayout->getFontSize();
         caretX = rect.position.x;
 
         const auto& lines = textLayout->getLines();
@@ -190,6 +193,12 @@ void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
         }
     } else {
         return;  // Container or unknown type
+    }
+
+    // Use animated position if enabled
+    if (caret.useAnimatedPosition) {
+        caretX = caret.animatedCaretX;
+        caretY = caret.animatedCaretY;
     }
 
     Color caretColor(0, 0, 0, 255);
@@ -228,7 +237,7 @@ void Painter::paintSelection(DisplayList& displayList, const CaretState& caret,
                 if (!lines.empty()) {
                     const Rect& rect = layout->getRect();
                     float fontSize = textLayout->getFontSize();
-                    float lineHeight = fontSize * 1.2f;
+                    float lineHeight = fontSize;
 
                     int startLine = textLayout->getLineForChar(localStart);
                     int endLine = textLayout->getLineForChar(localEnd > 0 ? localEnd - 1 : 0);
@@ -325,7 +334,7 @@ Rect Painter::computeSelectionRect(const LayoutObject* layout, int localStart, i
     if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(layout)) {
         const auto& lines = textLayout->getLines();
         float fontSize = textLayout->getFontSize();
-        float lineHeight = fontSize * 1.2f;
+        float lineHeight = fontSize;
 
         if (lines.empty()) {
             // Fallback for unwrapped text

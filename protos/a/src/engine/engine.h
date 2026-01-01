@@ -4,8 +4,14 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <vector>
 #include "markdown_renderer.h"
 #include "clipboard.h"
+
+struct UndoState {
+    std::string text;
+    int cursorPos;
+};
 
 class Engine {
 public:
@@ -22,6 +28,7 @@ public:
 private:
     bool leftMouseHeld;
     float scrollOffset;
+    float scrollVelocity;
     float contentHeight;
     int viewportHeight;
     char* inputBuffer;
@@ -82,4 +89,21 @@ private:
 
     // Scroll helpers
     void ensureCursorVisible();
+
+    // Undo system
+    std::vector<UndoState> undoStack;
+    static const int MAX_UNDO = 100;
+    void saveUndoState();
+    void undo();
+
+    // Cursor animation
+    float caretAnimX;
+    float caretAnimY;
+    float caretVelX;
+    float caretVelY;
+    float caretTargetX;
+    float caretTargetY;
+    double lastBlinkTime;
+    bool caretVisible;
+    void updateCaretAnimation();
 };

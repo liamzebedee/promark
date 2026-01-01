@@ -115,7 +115,7 @@ TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
 Size TextLayoutObject::computeIntrinsicSize() const {
     std::string text = sourceObject->getText();
     float fontSize = getFontSize();
-    float lineHeight = fontSize * 1.2f;
+    float lineHeight = fontSize;
 
     if (text.empty()) {
         return Size(0, lineHeight);
@@ -151,7 +151,7 @@ Size TextLayoutObject::computeIntrinsicSize() const {
         width = text.length() * fontSize * 0.6f;
     }
 
-    return Size(width, lineHeight);
+    return Size(width, fontSize);
 }
 
 float TextLayoutObject::getFontSize() const {
@@ -247,7 +247,7 @@ void TextLayoutObject::wrapText(float maxWidth) {
     }
 
     float fontSize = getFontSize();
-    float lineHeight = fontSize * 1.2f;
+    float lineHeight = fontSize;
     int lineStart = 0;
     float lineStartX = 0;
     int lastWordEnd = 0;
