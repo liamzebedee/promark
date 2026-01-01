@@ -16,15 +16,84 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parse(const std::string& markdow
     return parseDocument(markdown);
 }
 
-// Parse inline elements like links [text](url) within a line
-// Returns the display text (with link syntax removed) and populates link ranges on parent
+// Helper to find closing delimiter for bold/italic
+// Returns position after the closing delimiter, or std::string::npos if not found
+static size_t findClosingDelimiter(const std::string& line, size_t start, const std::string& delim) {
+    size_t pos = start;
+    while (pos < line.length()) {
+        size_t found = line.find(delim, pos);
+        if (found == std::string::npos) {
+            return std::string::npos;
+        }
+        // Make sure it's not escaped and not at word boundary issues
+        // For simplicity, just find the delimiter
+        return found;
+    }
+    return std::string::npos;
+}
+
+// Parse inline elements like links [text](url), **bold**, *italic* within a line
+// Returns the display text (with syntax removed) and populates ranges on parent
 std::string MarkdownParser::parseInlineElements(const std::string& line, int lineRawStart,
                                                  MarkdownObject* parent) {
+    (void)lineRawStart;  // Not used currently
     std::string displayText;
     size_t pos = 0;
 
     while (pos < line.length()) {
-        // Look for link syntax [text](url)
+        // Check for bold+italic (*** or ___)
+        if (pos + 2 < line.length() &&
+            ((line[pos] == '*' && line[pos+1] == '*' && line[pos+2] == '*') ||
+             (line[pos] == '_' && line[pos+1] == '_' && line[pos+2] == '_'))) {
+            char delim = line[pos];
+            std::string delimStr(3, delim);
+            size_t endPos = findClosingDelimiter(line, pos + 3, delimStr);
+            if (endPos != std::string::npos) {
+                std::string content = line.substr(pos + 3, endPos - pos - 3);
+                int styleStart = static_cast<int>(displayText.length());
+                displayText += content;
+                int styleEnd = static_cast<int>(displayText.length());
+                parent->addStyleRange(styleStart, styleEnd, TextStyle::BoldItalic);
+                pos = endPos + 3;
+                continue;
+            }
+        }
+
+        // Check for bold (** or __)
+        if (pos + 1 < line.length() &&
+            ((line[pos] == '*' && line[pos+1] == '*') ||
+             (line[pos] == '_' && line[pos+1] == '_'))) {
+            char delim = line[pos];
+            std::string delimStr(2, delim);
+            size_t endPos = findClosingDelimiter(line, pos + 2, delimStr);
+            if (endPos != std::string::npos) {
+                std::string content = line.substr(pos + 2, endPos - pos - 2);
+                int styleStart = static_cast<int>(displayText.length());
+                displayText += content;
+                int styleEnd = static_cast<int>(displayText.length());
+                parent->addStyleRange(styleStart, styleEnd, TextStyle::Bold);
+                pos = endPos + 2;
+                continue;
+            }
+        }
+
+        // Check for italic (* or _)
+        if (line[pos] == '*' || line[pos] == '_') {
+            char delim = line[pos];
+            std::string delimStr(1, delim);
+            size_t endPos = findClosingDelimiter(line, pos + 1, delimStr);
+            if (endPos != std::string::npos && endPos > pos + 1) {
+                std::string content = line.substr(pos + 1, endPos - pos - 1);
+                int styleStart = static_cast<int>(displayText.length());
+                displayText += content;
+                int styleEnd = static_cast<int>(displayText.length());
+                parent->addStyleRange(styleStart, styleEnd, TextStyle::Italic);
+                pos = endPos + 1;
+                continue;
+            }
+        }
+
+        // Check for link syntax [text](url)
         if (line[pos] == '[') {
             size_t textEnd = line.find(']', pos + 1);
             if (textEnd != std::string::npos && textEnd + 1 < line.length() && line[textEnd + 1] == '(') {
@@ -46,6 +115,7 @@ std::string MarkdownParser::parseInlineElements(const std::string& line, int lin
                 }
             }
         }
+
         displayText += line[pos];
         pos++;
     }
@@ -109,8 +179,11 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string&
             auto heading = std::make_unique<HeadingObject>(level);
             heading->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
 
+            // Parse inline elements (bold, italic, links) in heading text
+            std::string displayText = parseInlineElements(headingText, textRawStart, heading.get());
+
             auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-            textNode->setText(headingText);
+            textNode->setText(displayText);
             textNode->setRawRange(textRawStart, textRawEnd);
             textNode->setTextOffset(0);  // Text starts at textRawStart
 
@@ -169,8 +242,11 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string&
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
             paragraph->setRawRange(static_cast<int>(firstTextRawStart), static_cast<int>(blockEnd));
 
+            // Parse inline elements (bold, italic, links) in blockquote text
+            std::string displayText = parseInlineElements(combinedText, static_cast<int>(firstTextRawStart), paragraph.get());
+
             auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-            textNode->setText(combinedText);
+            textNode->setText(displayText);
             textNode->setRawRange(static_cast<int>(firstTextRawStart), static_cast<int>(blockEnd));
             textNode->setTextOffset(0);
             paragraph->addChild(std::move(textNode));
@@ -202,8 +278,11 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string&
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
             paragraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
 
+            // Parse inline elements (bold, italic, links)
+            std::string displayText = parseInlineElements(line, static_cast<int>(lineStart), paragraph.get());
+
             auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-            textNode->setText(line);
+            textNode->setText(displayText);
             textNode->setRawRange(static_cast<int>(lineStart), static_cast<int>(lineEnd));
             textNode->setTextOffset(0);
 

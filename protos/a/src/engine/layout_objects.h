@@ -109,6 +109,9 @@ public:
     // Link ranges from parent paragraph
     const std::vector<InlineLinkRange>& getLinkRanges() const;
 
+    // Style ranges from parent paragraph
+    const std::vector<InlineStyleRange>& getStyleRanges() const;
+
 private:
     std::vector<GlyphRun> glyphRuns;
     std::vector<float> charXOffsets;  // Cumulative x offset for each character

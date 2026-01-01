@@ -22,8 +22,10 @@ const Color& DrawRectOp::getColor() const {
     return color;
 }
 
-DrawTextOp::DrawTextOp(const Point& position, const std::string& text, const Color& color, float fontSize) 
-    : PaintOp(PaintOpType::DrawText), position(position), text(text), color(color), fontSize(fontSize) {
+DrawTextOp::DrawTextOp(const Point& position, const std::string& text, const Color& color,
+                       float fontSize, TextStyle style)
+    : PaintOp(PaintOpType::DrawText), position(position), text(text), color(color),
+      fontSize(fontSize), style(style) {
 }
 
 const Point& DrawTextOp::getPosition() const {
@@ -40,6 +42,10 @@ const Color& DrawTextOp::getColor() const {
 
 float DrawTextOp::getFontSize() const {
     return fontSize;
+}
+
+TextStyle DrawTextOp::getStyle() const {
+    return style;
 }
 
 DrawImageOp::DrawImageOp(const Rect& destRect, const std::string& imagePath) 

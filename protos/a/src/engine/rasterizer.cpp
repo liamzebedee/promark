@@ -4,7 +4,9 @@
 #include <map>
 #include <iostream>
 
-Rasterizer::Rasterizer() : hasClip(false), fontLoaded(false), currentFontSize(0) {
+Rasterizer::Rasterizer() : hasClip(false), faceRegular(nullptr), faceBold(nullptr),
+    faceItalic(nullptr), faceBoldItalic(nullptr), fontLoaded(false),
+    currentFontSize(0), currentStyle(TextStyle::Normal) {
     initializeFont();
 }
 
@@ -25,7 +27,10 @@ Rasterizer::~Rasterizer() {
 
     // Clean up FreeType font resources
     if (fontLoaded) {
-        FT_Done_Face(face);
+        if (faceRegular) FT_Done_Face(faceRegular);
+        if (faceBold) FT_Done_Face(faceBold);
+        if (faceItalic) FT_Done_Face(faceItalic);
+        if (faceBoldItalic) FT_Done_Face(faceBoldItalic);
         FT_Done_FreeType(ft);
     }
 }
@@ -91,15 +96,18 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
     const std::string& text = op.getText();
     const Color& color = op.getColor();
     int fontSize = static_cast<int>(op.getFontSize());
+    TextStyle style = op.getStyle();
 
     // Set font size for glyph cache lookup
-    if (fontSize != currentFontSize) {
+    FT_Face face = getFaceForStyle(style);
+    if (face && (fontSize != currentFontSize || style != currentStyle)) {
         FT_Set_Pixel_Sizes(face, 0, fontSize);
         currentFontSize = fontSize;
+        currentStyle = style;
     }
 
     // position.y is the baseline
-    renderText(text, position.x, position.y, color);
+    renderText(text, position.x, position.y, color, style);
 }
 
 void Rasterizer::executeDrawImage(const DrawImageOp& op) {
@@ -369,37 +377,79 @@ bool Rasterizer::initializeFont() {
         std::cerr << "Could not init FreeType Library" << std::endl;
         return false;
     }
-    
-    // Try to load system fonts
+
+    // Try to load system fonts (TTC files have multiple faces)
     const char* fontPaths[] = {
         "/System/Library/Fonts/Helvetica.ttc",
-        "/System/Library/Fonts/Arial.ttf", 
+        "/System/Library/Fonts/Arial.ttf",
         "/Library/Fonts/Arial.ttf",
         "/System/Library/Fonts/Times.ttc"
     };
-    
+
     for (const char* fontPath : fontPaths) {
-        if (loadFont(fontPath)) {
-            std::cout << "Loaded font: " << fontPath << std::endl;
+        if (loadFontFamily(fontPath)) {
+            std::cout << "Loaded font family: " << fontPath << std::endl;
             return true;
         }
     }
-    
+
     std::cerr << "Failed to load any system font" << std::endl;
     return false;
 }
 
-bool Rasterizer::loadFont(const char* fontPath) {
-    if (FT_New_Face(ft, fontPath, 0, &face)) {
+bool Rasterizer::loadFont(const char* fontPath, int faceIndex, FT_Face* outFace) {
+    if (FT_New_Face(ft, fontPath, faceIndex, outFace)) {
         return false;
     }
+    return true;
+}
+
+bool Rasterizer::loadFontFamily(const char* fontPath) {
+    // Load regular face (index 0)
+    if (!loadFont(fontPath, 0, &faceRegular)) {
+        return false;
+    }
+
+    // For TTC files, try to load bold (index 1), italic (index 2), bold-italic (index 3)
+    // If they fail, we'll use synthetic styles
+    std::string path(fontPath);
+    bool isTTC = (path.length() > 4 && path.substr(path.length() - 4) == ".ttc");
+
+    if (isTTC) {
+        // Helvetica.ttc face indices:
+        // 0 = Helvetica
+        // 1 = Helvetica Bold
+        // 2 = Helvetica Oblique
+        // 3 = Helvetica Bold Oblique
+        loadFont(fontPath, 1, &faceBold);
+        loadFont(fontPath, 2, &faceItalic);
+        loadFont(fontPath, 3, &faceBoldItalic);
+    }
+
+    // Fallback: if bold/italic not loaded, use regular for all
+    if (!faceBold) faceBold = faceRegular;
+    if (!faceItalic) faceItalic = faceRegular;
+    if (!faceBoldItalic) faceBoldItalic = faceBold ? faceBold : faceRegular;
 
     fontLoaded = true;
     return true;
 }
 
-const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize) {
-    GlyphKey key{codepoint, fontSize};
+FT_Face Rasterizer::getFaceForStyle(TextStyle style) {
+    if (!fontLoaded) return nullptr;
+
+    if (hasStyle(style, TextStyle::Bold) && hasStyle(style, TextStyle::Italic)) {
+        return faceBoldItalic;
+    } else if (hasStyle(style, TextStyle::Bold)) {
+        return faceBold;
+    } else if (hasStyle(style, TextStyle::Italic)) {
+        return faceItalic;
+    }
+    return faceRegular;
+}
+
+const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize, TextStyle style) {
+    GlyphKey key{codepoint, fontSize, static_cast<uint8_t>(style)};
 
     // Check cache
     auto it = glyphCache.find(key);
@@ -407,10 +457,15 @@ const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize) {
         return &it->second;
     }
 
+    // Get the appropriate font face for this style
+    FT_Face face = getFaceForStyle(style);
+    if (!face) return nullptr;
+
     // Set font size if changed
-    if (fontSize != currentFontSize) {
+    if (fontSize != currentFontSize || style != currentStyle) {
         FT_Set_Pixel_Sizes(face, 0, fontSize);
         currentFontSize = fontSize;
+        currentStyle = style;
     }
 
     // Load glyph using Unicode code point
@@ -450,12 +505,13 @@ const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize) {
 }
 
 void Rasterizer::renderCodepoint(uint32_t codepoint, float x, float y, const Color& color) {
-    // Load glyph
-    if (FT_Load_Char(face, static_cast<FT_ULong>(codepoint), FT_LOAD_RENDER)) {
+    // Load glyph (uses regular face)
+    if (!faceRegular) return;
+    if (FT_Load_Char(faceRegular, static_cast<FT_ULong>(codepoint), FT_LOAD_RENDER)) {
         return;
     }
 
-    FT_GlyphSlot g = face->glyph;
+    FT_GlyphSlot g = faceRegular->glyph;
 
     // Skip empty glyphs (spaces, etc)
     if (g->bitmap.width == 0 || g->bitmap.rows == 0) {
@@ -503,7 +559,7 @@ void Rasterizer::renderCodepoint(uint32_t codepoint, float x, float y, const Col
     glDeleteTextures(1, &texture);
 }
 
-void Rasterizer::renderText(const std::string& text, float x, float y, const Color& color) {
+void Rasterizer::renderText(const std::string& text, float x, float y, const Color& color, TextStyle style) {
     // Round baseline to integer to ensure consistent glyph positioning
     float penX = std::round(x);
     float baseline = std::round(y);
@@ -523,8 +579,8 @@ void Rasterizer::renderText(const std::string& text, float x, float y, const Col
             continue;  // Newlines handled by layout
         }
 
-        // Get cached glyph
-        const GlyphInfo* glyph = getGlyph(codepoint, currentFontSize);
+        // Get cached glyph with style
+        const GlyphInfo* glyph = getGlyph(codepoint, currentFontSize, style);
         if (!glyph) {
             continue;
         }

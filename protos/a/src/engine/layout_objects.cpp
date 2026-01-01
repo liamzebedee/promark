@@ -370,6 +370,15 @@ const std::vector<InlineLinkRange>& TextLayoutObject::getLinkRanges() const {
     return empty;
 }
 
+const std::vector<InlineStyleRange>& TextLayoutObject::getStyleRanges() const {
+    // Get style ranges from parent paragraph
+    if (parent && parent->getSourceObject()) {
+        return parent->getSourceObject()->getStyleRanges();
+    }
+    static std::vector<InlineStyleRange> empty;
+    return empty;
+}
+
 ImageLayoutObject::ImageLayoutObject(const MarkdownObject* sourceObject) 
     : LayoutObject(sourceObject, LayoutFlow::Block), sizeComputed(false) {
 }

@@ -74,6 +74,10 @@ public:
     void addLinkRange(int start, int end, const std::string& url);
     const std::vector<InlineLinkRange>& getLinkRanges() const { return linkRanges; }
 
+    // Inline style ranges (for bold/italic text)
+    void addStyleRange(int start, int end, TextStyle style);
+    const std::vector<InlineStyleRange>& getStyleRanges() const { return styleRanges; }
+
 private:
     MarkdownObjectType type;
     std::vector<std::unique_ptr<MarkdownObject>> children;
@@ -82,6 +86,7 @@ private:
     int rawEnd = 0;     // End position in raw markdown
     int textOffset = 0; // Offset from rawStart to where visible text begins
     std::vector<InlineLinkRange> linkRanges;
+    std::vector<InlineStyleRange> styleRanges;
 };
 
 class HeadingObject : public MarkdownObject {

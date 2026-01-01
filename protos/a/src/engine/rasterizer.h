@@ -16,14 +16,16 @@ struct GlyphInfo {
     int advance;
 };
 
-// Key for glyph cache: Unicode code point + font size
+// Key for glyph cache: Unicode code point + font size + style
 struct GlyphKey {
     uint32_t codepoint;
     int fontSize;
+    uint8_t style;  // TextStyle as uint8_t
 
     bool operator<(const GlyphKey& other) const {
         if (codepoint != other.codepoint) return codepoint < other.codepoint;
-        return fontSize < other.fontSize;
+        if (fontSize != other.fontSize) return fontSize < other.fontSize;
+        return style < other.style;
     }
 };
 
@@ -66,16 +68,22 @@ private:
     
     // FreeType font system
     FT_Library ft;
-    FT_Face face;
+    FT_Face faceRegular;
+    FT_Face faceBold;
+    FT_Face faceItalic;
+    FT_Face faceBoldItalic;
     bool fontLoaded;
-    
+
     // Font rendering
-    bool loadFont(const char* fontPath);
+    bool loadFont(const char* fontPath, int faceIndex, FT_Face* outFace);
+    bool loadFontFamily(const char* fontPath);
     void renderCodepoint(uint32_t codepoint, float x, float y, const Color& color);
-    void renderText(const std::string& text, float x, float y, const Color& color);
+    void renderText(const std::string& text, float x, float y, const Color& color, TextStyle style);
+    FT_Face getFaceForStyle(TextStyle style);
 
     // Glyph caching
     std::map<GlyphKey, GlyphInfo> glyphCache;
-    const GlyphInfo* getGlyph(uint32_t codepoint, int fontSize);
+    const GlyphInfo* getGlyph(uint32_t codepoint, int fontSize, TextStyle style);
     int currentFontSize;
+    TextStyle currentStyle;
 };

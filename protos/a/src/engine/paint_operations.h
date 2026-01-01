@@ -1,5 +1,6 @@
 #pragma once
 #include "layout_objects.h"
+#include "markdown_objects.h"  // For TextStyle
 #include <vector>
 #include <memory>
 #include <cstdint>
@@ -47,18 +48,21 @@ private:
 
 class DrawTextOp : public PaintOp {
 public:
-    DrawTextOp(const Point& position, const std::string& text, const Color& color, float fontSize = 16.0f);
-    
+    DrawTextOp(const Point& position, const std::string& text, const Color& color,
+               float fontSize = 16.0f, TextStyle style = TextStyle::Normal);
+
     const Point& getPosition() const;
     const std::string& getText() const;
     const Color& getColor() const;
     float getFontSize() const;
-    
+    TextStyle getStyle() const;
+
 private:
     Point position;
     std::string text;
     Color color;
     float fontSize;
+    TextStyle style;
 };
 
 class DrawImageOp : public PaintOp {

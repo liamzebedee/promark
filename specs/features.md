@@ -27,7 +27,8 @@
 - formatting
     - links render
     - blockquotes render
-    
+- BUILT-IN MARKDOWN TABLE EDITING SUPPORT
+
 
 
 use cases/markets:

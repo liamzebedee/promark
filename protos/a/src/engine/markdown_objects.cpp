@@ -35,6 +35,10 @@ void MarkdownObject::addLinkRange(int start, int end, const std::string& url) {
     linkRanges.push_back({start, end, url});
 }
 
+void MarkdownObject::addStyleRange(int start, int end, TextStyle style) {
+    styleRanges.push_back({start, end, style});
+}
+
 HeadingObject::HeadingObject(int level) : MarkdownObject(MarkdownObjectType::Heading), level(level) {
 }
 

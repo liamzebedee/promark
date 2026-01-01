@@ -66,6 +66,7 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
     std::string fullText = textObject->getSourceObject()->getText();
     const auto& lines = textObject->getLines();
     const auto& linkRanges = textObject->getLinkRanges();
+    const auto& styleRanges = textObject->getStyleRanges();
 
     if (lines.empty()) {
         // Fallback: render full text as single line
@@ -75,32 +76,65 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
         return;
     }
 
-    // Render each wrapped line, with different colors for links
+    // Helper lambda to get style at a character position
+    auto getStyleAt = [&styleRanges](int pos) -> TextStyle {
+        for (const auto& sr : styleRanges) {
+            if (pos >= sr.startChar && pos < sr.endChar) {
+                return sr.style;
+            }
+        }
+        return TextStyle::Normal;
+    };
+
+    // Helper lambda to check if position is in a link
+    auto getLinkAt = [&linkRanges](int pos) -> const InlineLinkRange* {
+        for (const auto& lr : linkRanges) {
+            if (pos >= lr.startChar && pos < lr.endChar) {
+                return &lr;
+            }
+        }
+        return nullptr;
+    };
+
+    // Render each wrapped line
     for (const auto& line : lines) {
         float lineX = rect.position.x;
         float lineY = rect.position.y + line.yOffset + fontSize;
         int charPos = line.startChar;
 
         while (charPos < line.endChar) {
-            // Check if current position is inside a link
-            bool inLink = false;
-            int linkEnd = line.endChar;
-            std::string linkUrl;
+            // Get current styling info
+            const InlineLinkRange* currentLink = getLinkAt(charPos);
+            TextStyle currentStyle = getStyleAt(charPos);
+            bool inLink = (currentLink != nullptr);
 
-            for (const auto& lr : linkRanges) {
-                if (charPos >= lr.startChar && charPos < lr.endChar) {
-                    inLink = true;
-                    linkEnd = std::min(lr.endChar, line.endChar);
-                    linkUrl = lr.url;
-                    break;
-                } else if (lr.startChar > charPos && lr.startChar < linkEnd) {
-                    // Next link starts before current segment end
-                    linkEnd = lr.startChar;
+            // Find where this segment ends (when style or link status changes)
+            int segmentEnd = line.endChar;
+
+            // Check link boundary
+            if (inLink) {
+                segmentEnd = std::min(segmentEnd, currentLink->endChar);
+            } else {
+                // Find where next link starts
+                for (const auto& lr : linkRanges) {
+                    if (lr.startChar > charPos && lr.startChar < segmentEnd) {
+                        segmentEnd = lr.startChar;
+                    }
+                }
+            }
+
+            // Check style boundary
+            for (const auto& sr : styleRanges) {
+                if (charPos >= sr.startChar && charPos < sr.endChar) {
+                    // We're inside this style range - end at its boundary
+                    segmentEnd = std::min(segmentEnd, sr.endChar);
+                } else if (sr.startChar > charPos && sr.startChar < segmentEnd) {
+                    // This style range starts later - end before it
+                    segmentEnd = sr.startChar;
                 }
             }
 
             // Extract segment text
-            int segmentEnd = inLink ? linkEnd : linkEnd;
             std::string segmentText = fullText.substr(charPos, segmentEnd - charPos);
 
             // Calculate x position for this segment
@@ -109,10 +143,10 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
                 segmentX += textObject->getCharXOffsetInLine(charPos);
             }
 
-            // Draw text segment
+            // Draw text segment with appropriate color and style
             Color segmentColor = inLink ? linkColor : defaultColor;
             Point textPos(segmentX, lineY);
-            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize);
+            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize, currentStyle);
             displayList.push_back(std::move(textOp));
 
             // Draw underline for links
