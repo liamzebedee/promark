@@ -25,17 +25,21 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     double x, y;
     glfwGetCursorPos(window, &x, &y);
+    double dpr = emscripten_get_device_pixel_ratio();
     if (engine) {
-        engine->handleMouse(button, action, mods, x, y);
+        engine->handleMouse(button, action, mods, x * dpr, y * dpr);
     }
 }
 
 void cursorPosCallback(GLFWwindow* window, double x, double y) {
+    double dpr = emscripten_get_device_pixel_ratio();
+    double sx = x * dpr;
+    double sy = y * dpr;
     if (engine) {
-        engine->handleMouseMove(x, y);
+        engine->handleMouseMove(sx, sy);
 
         // Update cursor style for links
-        if (engine->isOverLink(x, y)) {
+        if (engine->isOverLink(sx, sy)) {
             glfwSetCursor(window, glfwCreateStandardCursor(GLFW_HAND_CURSOR));
         } else {
             glfwSetCursor(window, glfwCreateStandardCursor(GLFW_IBEAM_CURSOR));
@@ -106,7 +110,12 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
 
-    window = glfwCreateWindow(900, 700, "MD Editor", nullptr, nullptr);
+    // Scale window size for HiDPI displays
+    double dpr = emscripten_get_device_pixel_ratio();
+    int windowW = (int)(900 * dpr);
+    int windowH = (int)(700 * dpr);
+
+    window = glfwCreateWindow(windowW, windowH, "MD Editor", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();

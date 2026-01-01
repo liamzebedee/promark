@@ -9,6 +9,12 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
+#include <fstream>
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_ONLY_JPEG
+#include "stb/stb_image.h"
 
 Rasterizer::Rasterizer() : hasClip(false), faceRegular(nullptr), faceBold(nullptr),
     faceItalic(nullptr), faceBoldItalic(nullptr), faceMono(nullptr), fontLoaded(false),
@@ -156,17 +162,26 @@ void Rasterizer::executeRestoreClip(const RestoreClipOp& op) {
 
 void Rasterizer::loadImage(const std::string& imagePath) {
     ImageData imgData;
+    bool loaded = false;
 
     // Check if this is a data URI
     if (imagePath.substr(0, 5) == "data:") {
-        if (!loadFromDataURI(imagePath, imgData)) {
-            // Fallback to placeholder on decode failure
-            imgData.width = 100;
-            imgData.height = 100;
-            imgData.pixels.resize(imgData.width * imgData.height * 4, 128);
-        }
+        loaded = loadFromDataURI(imagePath, imgData);
     } else {
-        // TODO: Load from file path
+        // Load from file path using stb_image
+        int width, height, channels;
+        unsigned char* data = stbi_load(imagePath.c_str(), &width, &height, &channels, 4);
+        if (data) {
+            imgData.width = width;
+            imgData.height = height;
+            imgData.pixels.assign(data, data + width * height * 4);
+            stbi_image_free(data);
+            loaded = true;
+        }
+    }
+
+    if (!loaded) {
+        // Fallback to placeholder on decode failure
         imgData.width = 100;
         imgData.height = 100;
         imgData.pixels.resize(imgData.width * imgData.height * 4, 128);
@@ -255,62 +270,16 @@ bool Rasterizer::decodeBase64(const std::string& base64, std::vector<uint8_t>& o
 }
 
 bool Rasterizer::decodePngFromMemory(const uint8_t* data, size_t length, ImageData& outData) {
-    // Minimal PNG decoder for uncompressed/simple PNGs
-    // PNG signature: 137 80 78 71 13 10 26 10
-    if (length < 8 || data[0] != 137 || data[1] != 80 || data[2] != 78 || data[3] != 71) {
+    int width, height, channels;
+    unsigned char* pixels = stbi_load_from_memory(data, length, &width, &height, &channels, 4);
+    if (!pixels) {
         return false;
     }
 
-    // Parse chunks to find IHDR and IDAT
-    size_t pos = 8;
-    uint32_t width = 0, height = 0;
-    uint8_t bitDepth = 0, colorType = 0;
-    std::vector<uint8_t> compressedData;
-
-    while (pos + 12 <= length) {
-        uint32_t chunkLen = (data[pos] << 24) | (data[pos+1] << 16) | (data[pos+2] << 8) | data[pos+3];
-        std::string chunkType(reinterpret_cast<const char*>(&data[pos+4]), 4);
-
-        if (chunkType == "IHDR" && chunkLen >= 13) {
-            width = (data[pos+8] << 24) | (data[pos+9] << 16) | (data[pos+10] << 8) | data[pos+11];
-            height = (data[pos+12] << 24) | (data[pos+13] << 16) | (data[pos+14] << 8) | data[pos+15];
-            bitDepth = data[pos+16];
-            colorType = data[pos+17];
-        } else if (chunkType == "IDAT") {
-            compressedData.insert(compressedData.end(),
-                &data[pos+8], &data[pos+8+chunkLen]);
-        } else if (chunkType == "IEND") {
-            break;
-        }
-
-        pos += 12 + chunkLen;  // length(4) + type(4) + data + crc(4)
-    }
-
-    (void)bitDepth;
-    (void)colorType;
-
-    if (width == 0 || height == 0 || compressedData.empty()) {
-        return false;
-    }
-
-    // For now, create a colored placeholder based on first few bytes of compressed data
-    // (Full zlib decompression would require a zlib dependency)
     outData.width = width;
     outData.height = height;
-    outData.pixels.resize(width * height * 4);
-
-    // Generate a simple pattern using compressed data as "seed"
-    uint8_t r = compressedData.size() > 0 ? compressedData[0] : 128;
-    uint8_t g = compressedData.size() > 1 ? compressedData[1] : 128;
-    uint8_t b = compressedData.size() > 2 ? compressedData[2] : 128;
-
-    for (size_t i = 0; i < width * height; i++) {
-        outData.pixels[i * 4 + 0] = r;
-        outData.pixels[i * 4 + 1] = g;
-        outData.pixels[i * 4 + 2] = b;
-        outData.pixels[i * 4 + 3] = 255;
-    }
-
+    outData.pixels.assign(pixels, pixels + width * height * 4);
+    stbi_image_free(pixels);
     return true;
 }
 

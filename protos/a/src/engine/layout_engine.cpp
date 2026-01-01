@@ -51,7 +51,13 @@ void LayoutEngine::performLayout(LayoutObject* layoutRoot, const Size& available
     if (!layoutRoot) {
         return;
     }
-    
+
+    // Handle atomic layout objects (like images) that compute their own size
+    if (layoutRoot->isAtomic()) {
+        layoutRoot->layout(availableSpace);
+        return;
+    }
+
     // Perform layout based on flow type
     if (layoutRoot->getFlow() == LayoutFlow::Block) {
         layoutBlockFlow(layoutRoot, availableSpace);

@@ -22,7 +22,7 @@ static std::string loadShaderFile(const char* path) {
 }
 
 BatchRenderer::BatchRenderer()
-    : textProg(0), solidProg(0), vbo(0), viewportW(800), viewportH(600),
+    : textProg(0), solidProg(0), imageProg(0), vbo(0), viewportW(800), viewportH(600),
       glyphAtlas(nullptr), textured(false) {
     memset(projMatrix, 0, sizeof(projMatrix));
 }
@@ -31,6 +31,7 @@ BatchRenderer::~BatchRenderer() {
     if (vbo) glDeleteBuffers(1, &vbo);
     if (textProg) glDeleteProgram(textProg);
     if (solidProg) glDeleteProgram(solidProg);
+    if (imageProg) glDeleteProgram(imageProg);
 }
 
 bool BatchRenderer::init() {
@@ -93,8 +94,31 @@ bool BatchRenderer::init() {
     glDeleteShader(svs);
     glDeleteShader(sfs);
 
+    // Image shader (reuses text.vert, different fragment shader)
+    std::string imageFS = fragPreamble + loadShaderFile((std::string(shaderPath) + "image.frag").c_str());
+    const char* imageFSrc = imageFS.c_str();
+
+    unsigned int ivs = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(ivs, 1, &textVSrc, nullptr);  // Reuse text vertex shader
+    glCompileShader(ivs);
+
+    unsigned int ifs = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(ifs, 1, &imageFSrc, nullptr);
+    glCompileShader(ifs);
+
+    unsigned int iprog = glCreateProgram();
+    glBindAttribLocation(iprog, 0, "a_position");
+    glBindAttribLocation(iprog, 1, "a_texcoord");
+    glBindAttribLocation(iprog, 2, "a_color");
+    glAttachShader(iprog, ivs);
+    glAttachShader(iprog, ifs);
+    glLinkProgram(iprog);
+    glDeleteShader(ivs);
+    glDeleteShader(ifs);
+
     textProg = tprog;
     solidProg = sprog;
+    imageProg = iprog;
 
     // Create VBO
     glGenBuffers(1, &vbo);
@@ -238,11 +262,11 @@ void BatchRenderer::drawImage(float x, float y, float w, float h, unsigned int t
     // Flush any pending geometry first
     flush();
 
-    // Draw image with its own texture
-    glUseProgram(textProg);
-    int projLoc = glGetUniformLocation(textProg, "u_projection");
+    // Draw image with its own texture using image shader
+    glUseProgram(imageProg);
+    int projLoc = glGetUniformLocation(imageProg, "u_projection");
     if (projLoc >= 0) glUniformMatrix4fv(projLoc, 1, GL_FALSE, projMatrix);
-    int texLoc = glGetUniformLocation(textProg, "u_texture");
+    int texLoc = glGetUniformLocation(imageProg, "u_texture");
     if (texLoc >= 0) glUniform1i(texLoc, 0);
 
     glActiveTexture(GL_TEXTURE0);

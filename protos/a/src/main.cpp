@@ -82,7 +82,7 @@ int main() {
         return -1;
     }
 
-    engine->setContent("# Welcome to MD Editor\n\nThis is a **markdown** editor running in your browser!\n\n## Features\n\n- Real-time preview\n- Syntax highlighting\n- *Italic* and **bold** text\n\n```\nCode blocks work too!\n```\n\nStart typing to edit...\n");
+    engine->setContent("# Image Test\n\n![Test](/Users/liamz/Documents/Ongoing projects/mdeditor/protos/a/test_image.png)\n\nImage should appear above.\n");
 
     bool windowShown = false;
     while (!glfwWindowShouldClose(window)) {

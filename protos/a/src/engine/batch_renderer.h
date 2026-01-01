@@ -43,6 +43,7 @@ private:
 
     unsigned int textProg;
     unsigned int solidProg;
+    unsigned int imageProg;
     unsigned int vbo;
 
     std::vector<Vertex> vertices;

@@ -1,6 +1,7 @@
 #include "layout_objects.h"
 #include "utf8.h"
 #include <jpeglib.h>
+#include "stb/stb_image.h"
 
 LayoutObject::LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow) 
     : sourceObject(sourceObject), flow(flow), parent(nullptr) {
@@ -438,6 +439,11 @@ void ImageLayoutObject::computeImageSize() const {
 
     // Check for data URI
     if (src.substr(0, 5) != "data:") {
+        // File path - use stb_image to get dimensions
+        int width, height, channels;
+        if (stbi_info(src.c_str(), &width, &height, &channels)) {
+            intrinsicSize = Size(static_cast<float>(width), static_cast<float>(height));
+        }
         return;
     }
 
