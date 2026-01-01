@@ -23,16 +23,9 @@ Rasterizer::~Rasterizer() {
 }
 
 void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport) {
-    // Set up viewport
-    glViewport(viewport.position.x, viewport.position.y, viewport.size.width, viewport.size.height);
-    
-    // Set up orthographic projection for 2D rendering
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, viewport.size.width, viewport.size.height, 0, -1, 1); // Top-left origin
-    
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+    // Note: viewport and matrices are set up by Engine::render()
+    // We don't reset them here to preserve scroll offset transforms
+    (void)viewport;
     
     // Execute all paint operations
     for (const auto& op : displayList) {

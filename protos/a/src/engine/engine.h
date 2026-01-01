@@ -22,7 +22,10 @@ public:
 private:
     bool leftMouseHeld;
     float scrollOffset;
-    char inputBuffer[1024];
+    float contentHeight;
+    int viewportHeight;
+    char* inputBuffer;
+    static const int INPUT_BUFFER_SIZE = 10 * 1024 * 1024;  // 10MB
     int inputLength;
     
     // Text editing state
@@ -76,4 +79,7 @@ private:
     void selectAll();
     void copySelection();
     void paste();
+
+    // Scroll helpers
+    void ensureCursorVisible();
 };

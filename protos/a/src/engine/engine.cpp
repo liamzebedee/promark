@@ -4,33 +4,54 @@
 #include <iostream>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 
-Engine::Engine() : leftMouseHeld(false), scrollOffset(0.0f), inputLength(0), fontLoaded(false),
+Engine::Engine() : leftMouseHeld(false), scrollOffset(0.0f), contentHeight(0.0f),
+                   viewportHeight(0), inputBuffer(nullptr), inputLength(0), fontLoaded(false),
                    cursorPos(0), selectionStart(0), selectionEnd(0), hasSelection(false) {
-    memset(inputBuffer, 0, sizeof(inputBuffer));
-    
+    // Allocate 10MB input buffer
+    inputBuffer = new char[INPUT_BUFFER_SIZE];
+    memset(inputBuffer, 0, INPUT_BUFFER_SIZE);
+
     // Initialize markdown rendering system
     markdownRenderer = std::make_unique<MarkdownRenderer>();
     textBuffer = std::make_unique<TextBuffer>();
-    
-    // Set up initial markdown content - includes a 64x64 red square PNG test image
-    std::string initialContent = "# Welcome to Markdown Editor\n\nThis is a paragraph of body text that is long enough to demonstrate word wrapping when the window is resized to a narrower width. The text should automatically break at word boundaries.\n\nHere is another paragraph with even more content to show how multiple paragraphs wrap independently. Each paragraph maintains its own line breaking.\n\nMore text after the paragraphs.";
-    
+
+    // Set up initial markdown content with enough to scroll
+    std::string initialContent =
+        "# Welcome to Markdown Editor\n\n"
+        "This is a paragraph of body text that demonstrates word wrapping.\n\n"
+        "Here is another paragraph with more content.\n\n"
+        "## Getting Started\n\n"
+        "Lorem ipsum dolor sit amet, consectetur adipiscing elit.\n\n"
+        "Sed do eiusmod tempor incididunt ut labore et dolore.\n\n"
+        "## Features\n\n"
+        "Duis aute irure dolor in reprehenderit in voluptate.\n\n"
+        "Excepteur sint occaecat cupidatat non proident.\n\n"
+        "## More Content\n\n"
+        "Sunt in culpa qui officia deserunt mollit anim.\n\n"
+        "Ut enim ad minim veniam quis nostrud exercitation.\n\n"
+        "## Final Section\n\n"
+        "At vero eos et accusamus et iusto odio dignissimos.\n\n"
+        "End of document.";
+
     // Copy to input buffer for editing
-    strncpy(inputBuffer, initialContent.c_str(), sizeof(inputBuffer) - 1);
+    strncpy(inputBuffer, initialContent.c_str(), INPUT_BUFFER_SIZE - 1);
     inputLength = initialContent.length();
-    cursorPos = 0;  // Start at beginning
-    
+    cursorPos = 0;
+
     textBuffer->setText(initialContent);
     markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
 }
 
 Engine::~Engine() {
+    delete[] inputBuffer;
+
     if (fontLoaded) {
         FT_Done_Face(face);
         FT_Done_FreeType(ft);
     }
-    
+
     // Clean up OpenGL textures
     for (auto& glyph : glyphs) {
         glDeleteTextures(1, &glyph.second.textureID);
@@ -89,8 +110,10 @@ bool Engine::initialize() {
 }
 
 void Engine::render(int width, int height) {
+    viewportHeight = height;
+
     glViewport(0, 0, width, height);
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // White background
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     glMatrixMode(GL_PROJECTION);
@@ -99,8 +122,10 @@ void Engine::render(int width, int height) {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
+    // Apply scroll offset
+    glTranslatef(0, -scrollOffset, 0);
+
     if (markdownRenderer) {
-        // Convert raw cursor position to DOM position for display
         int domCursorPos = markdownRenderer->rawToDOM(cursorPos);
         int domSelStart = markdownRenderer->rawToDOM(selectionStart);
         int domSelEnd = markdownRenderer->rawToDOM(selectionEnd);
@@ -114,6 +139,62 @@ void Engine::render(int width, int height) {
 
         Size viewportSize(width, height);
         markdownRenderer->render(viewportSize);
+
+        contentHeight = markdownRenderer->getContentHeight();
+    }
+
+    // Reset transform for scrollbar (fixed position UI)
+    glLoadIdentity();
+
+    // Draw scrollbar if content is taller than viewport
+    if (contentHeight > height) {
+        float scrollbarWidth = 7.0f;
+        float margin = 3.0f;
+        float trackX = width - scrollbarWidth - margin;
+        float trackHeight = height - margin * 2;
+
+        // Thumb size proportional to visible area
+        float visibleRatio = (float)height / contentHeight;
+        float thumbHeight = std::max(40.0f, trackHeight * visibleRatio);
+
+        // Thumb position
+        float maxScroll = contentHeight - height;
+        float scrollRatio = (maxScroll > 0) ? scrollOffset / maxScroll : 0;
+        scrollRatio = std::max(0.0f, std::min(1.0f, scrollRatio));
+        float thumbY = margin + scrollRatio * (trackHeight - thumbHeight);
+
+        glDisable(GL_TEXTURE_2D);
+
+        // Thumb with rounded appearance (draw as pill shape using circles at ends)
+        float radius = scrollbarWidth / 2.0f;
+        float centerX = trackX + radius;
+
+        // Main thumb body
+        glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
+        glBegin(GL_QUADS);
+        glVertex2f(trackX, thumbY + radius);
+        glVertex2f(trackX + scrollbarWidth, thumbY + radius);
+        glVertex2f(trackX + scrollbarWidth, thumbY + thumbHeight - radius);
+        glVertex2f(trackX, thumbY + thumbHeight - radius);
+        glEnd();
+
+        // Top cap (approximate circle with triangle fan)
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(centerX, thumbY + radius);
+        for (int i = 0; i <= 12; i++) {
+            float angle = 3.14159f + (3.14159f * i / 12);
+            glVertex2f(centerX + radius * cos(angle), thumbY + radius + radius * sin(angle));
+        }
+        glEnd();
+
+        // Bottom cap
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex2f(centerX, thumbY + thumbHeight - radius);
+        for (int i = 0; i <= 12; i++) {
+            float angle = (3.14159f * i / 12);
+            glVertex2f(centerX + radius * cos(angle), thumbY + thumbHeight - radius + radius * sin(angle));
+        }
+        glEnd();
     }
 }
 
@@ -156,10 +237,36 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
             }
 
         } else if (key == GLFW_KEY_UP) {
-            moveCursorVertically(-1, shift);
+            if (cmdOrCtrl) {
+                // Cmd/Ctrl+Up: go to start of document
+                if (shift && !hasSelection) {
+                    selectionStart = cursorPos;
+                    hasSelection = true;
+                }
+                cursorPos = 0;
+                if (shift) selectionEnd = cursorPos;
+                else hasSelection = false;
+                scrollOffset = 0;  // Scroll to top
+            } else {
+                moveCursorVertically(-1, shift);
+            }
 
         } else if (key == GLFW_KEY_DOWN) {
-            moveCursorVertically(1, shift);
+            if (cmdOrCtrl) {
+                // Cmd/Ctrl+Down: go to end of document
+                if (shift && !hasSelection) {
+                    selectionStart = cursorPos;
+                    hasSelection = true;
+                }
+                cursorPos = inputLength;
+                if (shift) selectionEnd = cursorPos;
+                else hasSelection = false;
+                // Scroll to bottom
+                float maxScroll = std::max(0.0f, contentHeight - viewportHeight);
+                scrollOffset = maxScroll;
+            } else {
+                moveCursorVertically(1, shift);
+            }
 
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (hasSelection) {
@@ -274,7 +381,15 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
 }
 
 void Engine::handleScroll(double xoffset, double yoffset) {
-    scrollOffset += yoffset * 10.0f;
+    (void)xoffset;
+
+    // Scroll down = negative yoffset = increase scrollOffset
+    scrollOffset -= yoffset * 40.0f;
+
+    // Clamp to valid range
+    float maxScroll = std::max(0.0f, contentHeight - viewportHeight);
+    if (scrollOffset < 0) scrollOffset = 0;
+    if (scrollOffset > maxScroll) scrollOffset = maxScroll;
 }
 
 void Engine::handleMouse(int button, int action, int mods, double x, double y) {
@@ -284,7 +399,9 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
         if (action == GLFW_PRESS) {
             leftMouseHeld = true;
             if (markdownRenderer) {
-                cursorPos = markdownRenderer->hitTest(static_cast<float>(x), static_cast<float>(y));
+                // Add scroll offset to get content-space y coordinate
+                float contentY = static_cast<float>(y) + scrollOffset;
+                cursorPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
                 cursorPos = std::max(0, std::min(cursorPos, inputLength));
                 selectionStart = cursorPos;
                 selectionEnd = cursorPos;
@@ -298,7 +415,8 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
 
 void Engine::handleMouseMove(double x, double y) {
     if (leftMouseHeld && markdownRenderer) {
-        int newPos = markdownRenderer->hitTest(static_cast<float>(x), static_cast<float>(y));
+        float contentY = static_cast<float>(y) + scrollOffset;
+        int newPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
         newPos = std::max(0, std::min(newPos, inputLength));
         cursorPos = newPos;
         selectionEnd = newPos;
@@ -475,19 +593,20 @@ void Engine::insertChar(char c) {
         cursorPos = start;
         hasSelection = false;
     }
-    
-    if (inputLength < sizeof(inputBuffer) - 1) {
+
+    if (inputLength < INPUT_BUFFER_SIZE - 1) {
         memmove(inputBuffer + cursorPos + 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
         inputBuffer[cursorPos] = c;
         inputLength++;
         cursorPos++;
-        
+
         // Update markdown content
         if (textBuffer && markdownRenderer) {
             std::string newText(inputBuffer, inputLength);
             textBuffer->setText(newText);
             markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
         }
+        ensureCursorVisible();
     }
 }
 
@@ -621,7 +740,7 @@ void Engine::paste() {
 
     // Insert clipboard text
     int pasteLen = clipboardText.length();
-    if (inputLength + pasteLen < sizeof(inputBuffer) - 1) {
+    if (inputLength + pasteLen < INPUT_BUFFER_SIZE - 1) {
         memmove(inputBuffer + cursorPos + pasteLen, inputBuffer + cursorPos, inputLength - cursorPos + 1);
         memcpy(inputBuffer + cursorPos, clipboardText.c_str(), pasteLen);
         inputLength += pasteLen;
@@ -633,6 +752,30 @@ void Engine::paste() {
             textBuffer->setText(newText);
             markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
         }
+        ensureCursorVisible();
     }
+}
+
+void Engine::ensureCursorVisible() {
+    if (!markdownRenderer) return;
+
+    int domPos = markdownRenderer->rawToDOM(cursorPos);
+    float cursorY = markdownRenderer->getCursorY(domPos);
+
+    float margin = 50.0f;
+
+    // If cursor is below visible area, scroll down
+    if (cursorY > scrollOffset + viewportHeight - margin) {
+        scrollOffset = cursorY - viewportHeight + margin;
+    }
+    // If cursor is above visible area, scroll up
+    else if (cursorY - 40 < scrollOffset + margin) {
+        scrollOffset = std::max(0.0f, cursorY - 40 - margin);
+    }
+
+    // Clamp scroll offset
+    float maxScroll = std::max(0.0f, contentHeight - viewportHeight);
+    if (scrollOffset < 0) scrollOffset = 0;
+    if (scrollOffset > maxScroll) scrollOffset = maxScroll;
 }
 

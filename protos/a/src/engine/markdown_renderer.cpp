@@ -106,6 +106,13 @@ const DisplayList& MarkdownRenderer::getDisplayList() const {
     return displayList;
 }
 
+float MarkdownRenderer::getContentHeight() const {
+    if (layoutTree) {
+        return layoutTree->getRect().size.height;
+    }
+    return 0;
+}
+
 // Helper to collect text objects from object tree
 static void collectTextObjects(const MarkdownObject* obj, std::vector<const MarkdownObject*>& out) {
     if (!obj) return;
@@ -251,6 +258,36 @@ int MarkdownRenderer::hitTest(float x, float y) const {
 
     // Click is after all characters
     return domToRaw(hitDOMStart + charCount);
+}
+
+float MarkdownRenderer::getCursorY(int domPos) const {
+    if (!layoutTree) return 0;
+
+    std::vector<std::pair<const TextLayoutObject*, int>> textLayouts;
+    int pos = 0;
+    collectTextLayoutsWithPos(layoutTree.get(), textLayouts, pos);
+
+    // Find which text layout contains this DOM position
+    for (const auto& [layout, layoutDOMPos] : textLayouts) {
+        int domLen = layout->getDOMLength();
+        if (domPos >= layoutDOMPos && domPos <= layoutDOMPos + domLen) {
+            // Found the layout containing this position
+            const Rect& rect = layout->getRect();
+            float fontSize = layout->getFontSize();
+            float lineHeight = fontSize * 1.2f;
+            return rect.position.y + lineHeight;  // Return bottom of line
+        }
+    }
+
+    // If not found, return bottom of last layout
+    if (!textLayouts.empty()) {
+        const auto& [layout, layoutDOMPos] = textLayouts.back();
+        const Rect& rect = layout->getRect();
+        float fontSize = layout->getFontSize();
+        return rect.position.y + fontSize * 1.2f;
+    }
+
+    return 0;
 }
 
 int MarkdownRenderer::rawToDOM(int rawPos) const {

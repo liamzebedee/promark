@@ -35,6 +35,7 @@ public:
     const MarkdownObject* getObjectTree() const;
     const LayoutObject* getLayoutTree() const;
     const DisplayList& getDisplayList() const;
+    float getContentHeight() const;
 
     // DOM↔Raw position mapping
     int getTotalDOMLength() const;
@@ -43,6 +44,9 @@ public:
 
     // Hit testing - convert screen coordinates to raw cursor position
     int hitTest(float x, float y) const;
+
+    // Get cursor Y position for auto-scroll
+    float getCursorY(int domPos) const;
 
 private:
     std::unique_ptr<TextBuffer> textBuffer;
