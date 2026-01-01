@@ -14,6 +14,7 @@ enum class MarkdownObjectType {
     Link,
     BlockQuote,
     CodeBlock,
+    Frontmatter,
     Equation,
     List,
     ListItem,
@@ -142,4 +143,14 @@ public:
 private:
     std::string language;
     std::string code;
+};
+
+class FrontmatterObject : public MarkdownObject {
+public:
+    FrontmatterObject();
+    const std::string& getContent() const;
+    void setContent(const std::string& content);
+
+private:
+    std::string content;
 };

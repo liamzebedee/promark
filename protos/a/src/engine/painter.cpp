@@ -205,6 +205,8 @@ Color Painter::getBackgroundColor(const MarkdownObject* object) {
     switch (object->getType()) {
         case MarkdownObjectType::CodeBlock:
             return Color(240, 240, 240, 255); // Light gray
+        case MarkdownObjectType::Frontmatter:
+            return Color(255, 250, 230, 255); // Warm cream/pale yellow
         case MarkdownObjectType::BlockQuote:
             return Color(250, 250, 250, 255); // Very light gray
         default:

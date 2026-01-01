@@ -93,3 +93,15 @@ const std::string& CodeBlockObject::getCode() const {
 void CodeBlockObject::setCode(const std::string& code) {
     this->code = code;
 }
+
+FrontmatterObject::FrontmatterObject()
+    : MarkdownObject(MarkdownObjectType::Frontmatter) {
+}
+
+const std::string& FrontmatterObject::getContent() const {
+    return content;
+}
+
+void FrontmatterObject::setContent(const std::string& content) {
+    this->content = content;
+}

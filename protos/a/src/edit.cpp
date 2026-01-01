@@ -147,6 +147,10 @@ int main(int argc, char* argv[]) {
     }
 
     glfwMakeContextCurrent(window);
+
+    // Hide window until first frame is rendered
+    glfwHideWindow(window);
+
     glfwSetKeyCallback(window, keyCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
@@ -171,6 +175,7 @@ int main(int argc, char* argv[]) {
 
     updateWindowTitle();
 
+    bool windowShown = false;
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
@@ -181,6 +186,12 @@ int main(int argc, char* argv[]) {
         updateWindowTitle();
 
         glfwSwapBuffers(window);
+
+        // Show window after first frame is fully rendered
+        if (!windowShown) {
+            glfwShowWindow(window);
+            windowShown = true;
+        }
     }
 
     delete engine;

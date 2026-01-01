@@ -29,11 +29,12 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutTree(const MarkdownObjec
     }
 
     bool isCodeBlock = (objectTree->getType() == MarkdownObjectType::CodeBlock);
-    auto layoutObject = createLayoutObject(objectTree, inCodeBlock);
+    bool isFrontmatter = (objectTree->getType() == MarkdownObjectType::Frontmatter);
+    auto layoutObject = createLayoutObject(objectTree, inCodeBlock || isFrontmatter);
 
     // Create layout objects for children
     for (const auto& child : objectTree->getChildren()) {
-        auto childLayout = createLayoutTree(child.get(), isCodeBlock || inCodeBlock);
+        auto childLayout = createLayoutTree(child.get(), isCodeBlock || isFrontmatter || inCodeBlock);
         if (childLayout) {
             layoutObject->addChild(std::move(childLayout));
         }
@@ -66,6 +67,7 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
         case MarkdownObjectType::Heading:
         case MarkdownObjectType::BlockQuote:
         case MarkdownObjectType::CodeBlock:
+        case MarkdownObjectType::Frontmatter:
         case MarkdownObjectType::List:
         case MarkdownObjectType::ListItem:
             return std::make_unique<BlockLayoutObject>(object);
@@ -101,6 +103,7 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
     bool isRoot = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::Document);
     bool isBlockQuote = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::BlockQuote);
     bool isCodeBlock = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::CodeBlock);
+    bool isFrontmatter = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::Frontmatter);
 
     float marginLeft = isRoot ? 50.0f : 0.0f;
     const float marginTop = isRoot ? 50.0f : 0.0f;
@@ -111,9 +114,9 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
         marginLeft = 20.0f;  // Space for gray bar + padding
     }
 
-    // Code blocks get small internal padding
+    // Code blocks and frontmatter get small internal padding
     float codeBlockPadding = 0.0f;
-    if (isCodeBlock) {
+    if (isCodeBlock || isFrontmatter) {
         marginLeft = 8.0f;
         codeBlockPadding = 6.0f;
     }
@@ -135,8 +138,8 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
         currentY += childRect.size.height + blockSpacing;
     }
 
-    // Add bottom padding for code blocks
-    if (isCodeBlock) {
+    // Add bottom padding for code blocks and frontmatter
+    if (isCodeBlock || isFrontmatter) {
         currentY += codeBlockPadding;
     }
 

@@ -130,6 +130,81 @@ std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string&
     size_t pos = 0;
     size_t textLen = text.length();
 
+    // Check for frontmatter at the very beginning of the document
+    if (textLen >= 3 && text[0] == '-' && text[1] == '-' && text[2] == '-') {
+        // Find the end of the opening --- line
+        size_t openingLineEnd = 3;
+        while (openingLineEnd < textLen && text[openingLineEnd] != '\n') {
+            // Allow only whitespace after ---
+            if (text[openingLineEnd] != ' ' && text[openingLineEnd] != '\t') {
+                goto not_frontmatter;
+            }
+            openingLineEnd++;
+        }
+
+        // Skip past the newline
+        size_t contentStart = (openingLineEnd < textLen) ? openingLineEnd + 1 : openingLineEnd;
+
+        // Find closing ---
+        size_t searchPos = contentStart;
+        while (searchPos < textLen) {
+            // Find start of line
+            size_t lineStart = searchPos;
+            size_t lineEnd = searchPos;
+            while (lineEnd < textLen && text[lineEnd] != '\n') {
+                lineEnd++;
+            }
+
+            std::string line = text.substr(lineStart, lineEnd - lineStart);
+
+            // Check if this line is exactly --- (with optional trailing whitespace)
+            if (line.length() >= 3 && line[0] == '-' && line[1] == '-' && line[2] == '-') {
+                bool validClosing = true;
+                for (size_t i = 3; i < line.length(); i++) {
+                    if (line[i] != ' ' && line[i] != '\t') {
+                        validClosing = false;
+                        break;
+                    }
+                }
+
+                if (validClosing) {
+                    // Found valid closing delimiter
+                    size_t closingLineEnd = (lineEnd < textLen) ? lineEnd + 1 : lineEnd;
+
+                    // Extract frontmatter content (without trailing newline before closing)
+                    std::string frontmatterContent;
+                    if (lineStart > contentStart) {
+                        frontmatterContent = text.substr(contentStart, lineStart - contentStart);
+                        // Remove trailing newline if present
+                        if (!frontmatterContent.empty() && frontmatterContent.back() == '\n') {
+                            frontmatterContent.pop_back();
+                        }
+                    }
+
+                    auto frontmatter = std::make_unique<FrontmatterObject>();
+                    frontmatter->setContent(frontmatterContent);
+                    frontmatter->setRawRange(0, static_cast<int>(closingLineEnd));
+
+                    // Add text child for layout purposes
+                    auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+                    textNode->setText(frontmatterContent);
+                    textNode->setRawRange(static_cast<int>(contentStart), static_cast<int>(lineStart));
+                    textNode->setTextOffset(0);
+                    frontmatter->addChild(std::move(textNode));
+
+                    document->addChild(std::move(frontmatter));
+                    pos = closingLineEnd;
+                    goto continue_parsing;
+                }
+            }
+
+            searchPos = (lineEnd < textLen) ? lineEnd + 1 : lineEnd;
+            if (searchPos <= lineEnd) break;  // Prevent infinite loop
+        }
+    }
+not_frontmatter:
+continue_parsing:
+
     while (pos < textLen) {
         // Find end of current line
         size_t lineStart = pos;

@@ -61,6 +61,10 @@ int main() {
     }
 
     glfwMakeContextCurrent(window);
+
+    // Hide window until first frame is rendered
+    glfwHideWindow(window);
+
     glfwSetKeyCallback(window, keyCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
@@ -78,6 +82,7 @@ int main() {
         return -1;
     }
 
+    bool windowShown = false;
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
@@ -92,6 +97,12 @@ int main() {
         engine->render(width, height);
 
         glfwSwapBuffers(window);
+
+        // Show window after first frame is fully rendered
+        if (!windowShown) {
+            glfwShowWindow(window);
+            windowShown = true;
+        }
     }
 
     delete engine;
