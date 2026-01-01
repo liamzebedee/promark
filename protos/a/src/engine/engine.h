@@ -2,11 +2,12 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <string>
-#include <map>
 #include <memory>
 #include <vector>
 #include "markdown_renderer.h"
 #include "clipboard.h"
+#include "batch_renderer.h"
+#include "glyph_atlas.h"
 
 struct UndoState {
     std::string text;
@@ -42,7 +43,6 @@ private:
     double lastClickY;
     int clickCount;  // 1=single, 2=double, 3=triple
     float scrollOffset;
-    float scrollVelocity;
     float contentHeight;
     int viewportHeight;
     char* inputBuffer;
@@ -65,25 +65,9 @@ private:
     FT_Face face;
     FT_Face monoFace;
     bool fontLoaded;
-    
-    struct Glyph {
-        unsigned int textureID;
-        int width;
-        int height;
-        int bearingX;
-        int bearingY;
-        int advance;
-    };
-    
-    std::map<char, Glyph> glyphs;
-    
-    void renderText(const char* text, float x, float y);
-    void renderChar(char c, float x, float y);
-    void renderCursor(float x, float y);
-    void renderSelection(const char* text, float x, float y);
+
     bool initFreeType();
     bool loadFont(const char* fontPath);
-    void loadGlyph(char c);
     
     // Text navigation helpers
     void moveCursor(int delta, bool extendSelection);
@@ -119,6 +103,11 @@ private:
     static const int TOOLBAR_HEIGHT = 40;
     void renderToolbar(int width);
     bool handleToolbarClick(double x, double y);
+
+    // GL2 batch renderer for UI
+    std::unique_ptr<BatchRenderer> uiRenderer;
+    std::unique_ptr<GlyphAtlas> uiAtlas;
+    bool uiRendererInitialized;
     void applyBold();
     void applyItalic();
     void applyHeading(int level);
@@ -128,8 +117,6 @@ private:
     // Cursor animation
     float caretAnimX;
     float caretAnimY;
-    float caretVelX;
-    float caretVelY;
     float caretTargetX;
     float caretTargetY;
     double lastBlinkTime;

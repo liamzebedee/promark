@@ -1,6 +1,4 @@
 #include "markdown_renderer.h"
-#include <chrono>
-#include <iostream>
 
 MarkdownRenderer::MarkdownRenderer() 
     : needsReparse(true), needsRelayout(true), needsRepaint(true) {
@@ -37,20 +35,11 @@ void MarkdownRenderer::setMonoFontFace(FT_Face face) {
     needsRepaint = true;
 }
 
-void MarkdownRenderer::render(const Size& viewportSize) {
-    using Clock = std::chrono::high_resolution_clock;
-    auto frameStart = Clock::now();
-    bool didWork = needsReparse || needsRelayout || needsRepaint;
-
+void MarkdownRenderer::render(const Size& viewportSize, float scrollOffsetY) {
     if (needsReparse) {
-        auto t0 = Clock::now();
         parseMarkdown();
-        auto t1 = Clock::now();
-        std::cout << "[PROFILE] parse: "
-                  << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms\n";
     }
 
-    // Check if viewport size changed - need to relayout
     if (viewportSize.width != lastViewportSize.width ||
         viewportSize.height != lastViewportSize.height) {
         needsRelayout = true;
@@ -58,33 +47,14 @@ void MarkdownRenderer::render(const Size& viewportSize) {
     }
 
     if (needsRelayout) {
-        auto t0 = Clock::now();
         performLayout(viewportSize);
-        auto t1 = Clock::now();
-        std::cout << "[PROFILE] layout: "
-                  << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms\n";
     }
 
     if (needsRepaint) {
-        auto t0 = Clock::now();
         paint();
-        auto t1 = Clock::now();
-        std::cout << "[PROFILE] paint: "
-                  << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms\n";
     }
 
-    {
-        auto t0 = Clock::now();
-        rasterize(viewportSize);
-        auto t1 = Clock::now();
-        if (didWork) {
-            std::cout << "[PROFILE] rasterize: "
-                      << std::chrono::duration<double, std::milli>(t1 - t0).count() << "ms\n";
-            auto frameEnd = Clock::now();
-            std::cout << "[PROFILE] TOTAL: "
-                      << std::chrono::duration<double, std::milli>(frameEnd - frameStart).count() << "ms\n\n";
-        }
-    }
+    rasterize(viewportSize, scrollOffsetY);
 }
 
 void MarkdownRenderer::parseMarkdown() {
@@ -124,9 +94,9 @@ void MarkdownRenderer::paint() {
     needsRepaint = false;
 }
 
-void MarkdownRenderer::rasterize(const Size& viewportSize) {
+void MarkdownRenderer::rasterize(const Size& viewportSize, float scrollOffsetY) {
     Rect viewport(0, 0, viewportSize.width, viewportSize.height);
-    rasterizer->rasterize(displayList, viewport);
+    rasterizer->rasterize(displayList, viewport, scrollOffsetY);
 }
 
 const MarkdownObject* MarkdownRenderer::getObjectTree() const {

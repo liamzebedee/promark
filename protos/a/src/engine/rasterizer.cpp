@@ -3,12 +3,18 @@
 #include <OpenGL/gl.h>
 #include <map>
 #include <iostream>
+#include <cmath>
+#include <algorithm>
 
 Rasterizer::Rasterizer() : hasClip(false), faceRegular(nullptr), faceBold(nullptr),
     faceItalic(nullptr), faceBoldItalic(nullptr), faceMono(nullptr), fontLoaded(false),
-    currentFontSize(0), currentStyle(TextStyle::Normal), currentMonospace(false) {
+    gl2Initialized(false) {
     initializeFont();
     loadMonoFont();
+
+    // Initialize GL2 renderer
+    atlas = std::make_unique<GlyphAtlas>(1024, 1024);
+    batchRenderer = std::make_unique<BatchRenderer>();
 }
 
 Rasterizer::~Rasterizer() {
@@ -16,13 +22,6 @@ Rasterizer::~Rasterizer() {
     for (auto& pair : imageCache) {
         if (pair.second.textureId != 0) {
             glDeleteTextures(1, &pair.second.textureId);
-        }
-    }
-
-    // Clean up cached glyph textures
-    for (auto& pair : glyphCache) {
-        if (pair.second.textureID != 0) {
-            glDeleteTextures(1, &pair.second.textureID);
         }
     }
 
@@ -37,10 +36,17 @@ Rasterizer::~Rasterizer() {
     }
 }
 
-void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport) {
-    // Note: viewport and matrices are set up by Engine::render()
-    // We don't reset them here to preserve scroll offset transforms
-    (void)viewport;
+void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY) {
+    // Initialize GL2 renderer on first use (need OpenGL context to be ready)
+    if (!gl2Initialized) {
+        atlas->init();
+        batchRenderer->init();
+        batchRenderer->setAtlas(atlas.get());
+        gl2Initialized = true;
+    }
+
+    batchRenderer->setViewport(viewport.size.width, viewport.size.height, scrollOffsetY);
+    batchRenderer->begin();
 
     // Execute all paint operations
     for (const auto& op : displayList) {
@@ -74,19 +80,18 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport)
                 break;
         }
     }
+
+    batchRenderer->flush();
 }
 
 void Rasterizer::executeDrawRect(const DrawRectOp& op) {
     const Rect& rect = op.getRect();
     const Color& color = op.getColor();
-    
-    glColor4ub(color.r, color.g, color.b, color.a);
-    glBegin(GL_QUADS);
-    glVertex2f(rect.position.x, rect.position.y);
-    glVertex2f(rect.position.x + rect.size.width, rect.position.y);
-    glVertex2f(rect.position.x + rect.size.width, rect.position.y + rect.size.height);
-    glVertex2f(rect.position.x, rect.position.y + rect.size.height);
-    glEnd();
+
+    batchRenderer->drawRect(rect.position.x, rect.position.y,
+                            rect.size.width, rect.size.height,
+                            color.r / 255.0f, color.g / 255.0f,
+                            color.b / 255.0f, color.a / 255.0f);
 }
 
 void Rasterizer::executeDrawText(const DrawTextOp& op) {
@@ -101,45 +106,31 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
     TextStyle style = op.getStyle();
     bool monospace = op.isMonospace();
 
-    // Set font size for glyph cache lookup
     FT_Face face = getFaceForStyle(style, monospace);
-    if (face && (fontSize != currentFontSize || style != currentStyle || monospace != currentMonospace)) {
-        FT_Set_Pixel_Sizes(face, 0, fontSize);
-        currentFontSize = fontSize;
-        currentStyle = style;
-        currentMonospace = monospace;
-    }
+    if (!face) return;
 
-    // position.y is the baseline
-    renderText(text, position.x, position.y, color, style, monospace);
+    batchRenderer->drawText(text, position.x, position.y,
+                            color.r / 255.0f, color.g / 255.0f,
+                            color.b / 255.0f, color.a / 255.0f,
+                            fontSize, style, monospace, face);
 }
 
 void Rasterizer::executeDrawImage(const DrawImageOp& op) {
     const std::string& imagePath = op.getImagePath();
-    
+
     // Load image if not cached
     if (imageCache.find(imagePath) == imageCache.end()) {
         loadImage(imagePath);
     }
-    
-    // Draw textured quad
+
+    // Draw image using batch renderer
     if (imageCache.find(imagePath) != imageCache.end()) {
         const ImageData& imgData = imageCache[imagePath];
         const Rect& rect = op.getDestRect();
-        
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, imgData.textureId);
-        glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-        
-        glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(rect.position.x, rect.position.y);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(rect.position.x + rect.size.width, rect.position.y);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(rect.position.x + rect.size.width, rect.position.y + rect.size.height);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(rect.position.x, rect.position.y + rect.size.height);
-        glEnd();
-        
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glDisable(GL_TEXTURE_2D);
+
+        batchRenderer->drawImage(rect.position.x, rect.position.y,
+                                  rect.size.width, rect.size.height,
+                                  imgData.textureId);
     }
 }
 
@@ -477,183 +468,21 @@ FT_Face Rasterizer::getFaceForStyle(TextStyle style, bool monospace) {
     return faceRegular;
 }
 
-const GlyphInfo* Rasterizer::getGlyph(uint32_t codepoint, int fontSize, TextStyle style, bool monospace) {
-    GlyphKey key{codepoint, fontSize, static_cast<uint8_t>(style), monospace};
-
-    // Check cache
-    auto it = glyphCache.find(key);
-    if (it != glyphCache.end()) {
-        return &it->second;
-    }
-
-    // Get the appropriate font face for this style
-    FT_Face face = getFaceForStyle(style, monospace);
-    if (!face) return nullptr;
-
-    // Set font size if changed
-    if (fontSize != currentFontSize || style != currentStyle || monospace != currentMonospace) {
-        FT_Set_Pixel_Sizes(face, 0, fontSize);
-        currentFontSize = fontSize;
-        currentStyle = style;
-        currentMonospace = monospace;
-    }
-
-    // Load glyph using Unicode code point
-    if (FT_Load_Char(face, static_cast<FT_ULong>(codepoint), FT_LOAD_RENDER)) {
-        return nullptr;
-    }
-
-    FT_GlyphSlot g = face->glyph;
-
-    GlyphInfo info;
-    info.width = g->bitmap.width;
-    info.height = g->bitmap.rows;
-    info.bearingX = g->bitmap_left;
-    info.bearingY = g->bitmap_top;
-    info.advance = g->advance.x >> 6;
-    info.textureID = 0;
-
-    // Create texture only if glyph has bitmap data
-    if (g->bitmap.width > 0 && g->bitmap.rows > 0) {
-        glGenTextures(1, &info.textureID);
-        glBindTexture(GL_TEXTURE_2D, info.textureID);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA,
-                     g->bitmap.width, g->bitmap.rows,
-                     0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
-
-    glyphCache[key] = info;
-    return &glyphCache[key];
-}
-
-void Rasterizer::renderCodepoint(uint32_t codepoint, float x, float y, const Color& color) {
-    // Load glyph (uses regular face)
-    if (!faceRegular) return;
-    if (FT_Load_Char(faceRegular, static_cast<FT_ULong>(codepoint), FT_LOAD_RENDER)) {
-        return;
-    }
-
-    FT_GlyphSlot g = faceRegular->glyph;
-
-    // Skip empty glyphs (spaces, etc)
-    if (g->bitmap.width == 0 || g->bitmap.rows == 0) {
-        return;
-    }
-
-    // Create texture
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA,
-                 g->bitmap.width, g->bitmap.rows,
-                 0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    // Position: x is pen position, y is baseline
-    // bitmap_left: horizontal offset from pen position
-    // bitmap_top: vertical offset from baseline (positive = above baseline)
-    float xpos = x + g->bitmap_left;
-    float ypos = y - g->bitmap_top;  // Top of glyph in top-left-origin coords
-    float w = g->bitmap.width;
-    float h = g->bitmap.rows;
-
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_TEXTURE_2D);
-    glColor4ub(color.r, color.g, color.b, color.a);
-
-    // Draw quad - FreeType bitmap is top-down, so flip texture coords
-    glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos,     ypos);      // top-left
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);      // top-right
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);  // bottom-right
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos,     ypos + h);  // bottom-left
-    glEnd();
-
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_BLEND);
-    glDeleteTextures(1, &texture);
-}
-
-void Rasterizer::renderText(const std::string& text, float x, float y, const Color& color, TextStyle style, bool monospace) {
-    // Round baseline to integer to ensure consistent glyph positioning
-    float penX = std::round(x);
-    float baseline = std::round(y);
-
-    // Enable blending once for all characters
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_TEXTURE_2D);
-    glColor4ub(color.r, color.g, color.b, color.a);
-
-    // Decode UTF-8 and render each code point
-    size_t pos = 0;
-    while (pos < text.length()) {
-        uint32_t codepoint = utf8::decode(text, pos);
-
-        if (codepoint == '\n') {
-            continue;  // Newlines handled by layout
-        }
-
-        // Get cached glyph with style and monospace flag
-        const GlyphInfo* glyph = getGlyph(codepoint, currentFontSize, style, monospace);
-        if (!glyph) {
-            continue;
-        }
-
-        // Render if glyph has a texture
-        if (glyph->textureID != 0) {
-            float xpos = std::round(penX + glyph->bearingX);
-            float ypos = std::round(baseline - glyph->bearingY);
-            float w = glyph->width;
-            float h = glyph->height;
-
-            glBindTexture(GL_TEXTURE_2D, glyph->textureID);
-
-            glBegin(GL_QUADS);
-                glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos,     ypos);
-                glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
-                glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);
-                glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos,     ypos + h);
-            glEnd();
-        }
-
-        // Advance pen position
-        penX += glyph->advance;
-    }
-
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDisable(GL_TEXTURE_2D);
-    glDisable(GL_BLEND);
-}
-
 void Rasterizer::executeDrawDebugBorder(const DrawDebugBorderOp& op) {
     const Rect& rect = op.getRect();
     const Color& color = op.getColor();
+    float r = color.r / 255.0f, g = color.g / 255.0f;
+    float b = color.b / 255.0f, a = color.a / 255.0f;
+    float t = 2.0f;  // Border thickness
 
-    glLineWidth(3.0f);
-    glColor4ub(color.r, color.g, color.b, color.a);
-    glBegin(GL_LINE_LOOP);
-    glVertex2f(rect.position.x, rect.position.y);
-    glVertex2f(rect.position.x + rect.size.width, rect.position.y);
-    glVertex2f(rect.position.x + rect.size.width, rect.position.y + rect.size.height);
-    glVertex2f(rect.position.x, rect.position.y + rect.size.height);
-    glEnd();
-    glLineWidth(1.0f);
+    // Top
+    batchRenderer->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
+    // Bottom
+    batchRenderer->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
+    // Left
+    batchRenderer->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
+    // Right
+    batchRenderer->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
 }
 
 void Rasterizer::executeDrawCaret(const DrawCaretOp& op) {
@@ -661,33 +490,19 @@ void Rasterizer::executeDrawCaret(const DrawCaretOp& op) {
     float height = op.getHeight();
     const Color& color = op.getColor();
 
-    // Draw caret as a thin vertical line (2px wide)
-    glColor4ub(color.r, color.g, color.b, color.a);
-    glBegin(GL_QUADS);
-    glVertex2f(pos.x, pos.y);
-    glVertex2f(pos.x + 2.0f, pos.y);
-    glVertex2f(pos.x + 2.0f, pos.y + height);
-    glVertex2f(pos.x, pos.y + height);
-    glEnd();
+    batchRenderer->drawRect(pos.x, pos.y, 2.0f, height,
+                            color.r / 255.0f, color.g / 255.0f,
+                            color.b / 255.0f, color.a / 255.0f);
 }
 
 void Rasterizer::executeDrawSelectionRect(const DrawSelectionRectOp& op) {
     const Rect& rect = op.getRect();
     const Color& color = op.getColor();
 
-    // Enable blending for translucent selection highlight
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    glColor4ub(color.r, color.g, color.b, color.a);
-    glBegin(GL_QUADS);
-    glVertex2f(rect.position.x, rect.position.y);
-    glVertex2f(rect.position.x + rect.size.width, rect.position.y);
-    glVertex2f(rect.position.x + rect.size.width, rect.position.y + rect.size.height);
-    glVertex2f(rect.position.x, rect.position.y + rect.size.height);
-    glEnd();
-
-    glDisable(GL_BLEND);
+    batchRenderer->drawRect(rect.position.x, rect.position.y,
+                            rect.size.width, rect.size.height,
+                            color.r / 255.0f, color.g / 255.0f,
+                            color.b / 255.0f, color.a / 255.0f);
 }
 
 void Rasterizer::executeDrawLine(const DrawLineOp& op) {
@@ -695,12 +510,22 @@ void Rasterizer::executeDrawLine(const DrawLineOp& op) {
     const Point& end = op.getEnd();
     float thickness = op.getThickness();
     const Color& color = op.getColor();
+    float r = color.r / 255.0f, g = color.g / 255.0f;
+    float b = color.b / 255.0f, a = color.a / 255.0f;
 
-    glColor4ub(color.r, color.g, color.b, color.a);
-    glLineWidth(thickness);
-    glBegin(GL_LINES);
-    glVertex2f(start.x, start.y);
-    glVertex2f(end.x, end.y);
-    glEnd();
-    glLineWidth(1.0f);
+    // Draw line as a thin rectangle
+    float dx = end.x - start.x;
+    float dy = end.y - start.y;
+
+    if (std::abs(dx) > std::abs(dy)) {
+        // Horizontal-ish line
+        float minX = std::min(start.x, end.x);
+        float y = start.y - thickness / 2.0f;
+        batchRenderer->drawRect(minX, y, std::abs(dx), thickness, r, g, b, a);
+    } else {
+        // Vertical-ish line
+        float minY = std::min(start.y, end.y);
+        float x = start.x - thickness / 2.0f;
+        batchRenderer->drawRect(x, minY, thickness, std::abs(dy), r, g, b, a);
+    }
 }

@@ -29,13 +29,13 @@ public:
     void setCaretState(const CaretState& state);
     void setFontFace(FT_Face face);
     void setMonoFontFace(FT_Face face);
-    void render(const Size& viewportSize);
+    void render(const Size& viewportSize, float scrollOffsetY = 0.0f);
 
     // Manual pipeline control for debugging/testing
     void parseMarkdown();
     void performLayout(const Size& availableSpace);
     void paint();
-    void rasterize(const Size& viewportSize);
+    void rasterize(const Size& viewportSize, float scrollOffsetY = 0.0f);
 
     const MarkdownObject* getObjectTree() const;
     const LayoutObject* getLayoutTree() const;

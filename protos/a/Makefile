@@ -46,7 +46,9 @@ ENGINE_SOURCES = $(SRC_DIR)/engine/engine.cpp \
 	$(SRC_DIR)/engine/paint_operations.cpp \
 	$(SRC_DIR)/engine/painter.cpp \
 	$(SRC_DIR)/engine/rasterizer.cpp \
-	$(SRC_DIR)/engine/markdown_renderer.cpp
+	$(SRC_DIR)/engine/markdown_renderer.cpp \
+	$(SRC_DIR)/engine/glyph_atlas.cpp \
+	$(SRC_DIR)/engine/batch_renderer.cpp
 
 SOURCES = $(SRC_DIR)/main.cpp $(ENGINE_SOURCES)
 SOURCES_EDIT = $(SRC_DIR)/edit.cpp $(ENGINE_SOURCES)

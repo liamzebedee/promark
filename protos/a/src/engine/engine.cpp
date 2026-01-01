@@ -7,10 +7,10 @@
 #include <cmath>
 
 Engine::Engine() : wantsToClose(false), leftMouseHeld(false), dirty(false), lastClickTime(0), lastClickX(0), lastClickY(0), clickCount(0),
-                   scrollOffset(0.0f), scrollVelocity(0.0f),
-                   contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
+                   scrollOffset(0.0f), contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
                    fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
-                   caretAnimX(0), caretAnimY(0), caretVelX(0), caretVelY(0),
+                   uiRendererInitialized(false),
+                   caretAnimX(0), caretAnimY(0),
                    caretTargetX(0), caretTargetY(0), lastBlinkTime(0), caretVisible(true) {
     // Allocate 10MB input buffer
     inputBuffer = new char[INPUT_BUFFER_SIZE];
@@ -56,11 +56,6 @@ Engine::~Engine() {
             FT_Done_Face(monoFace);
         }
         FT_Done_FreeType(ft);
-    }
-
-    // Clean up OpenGL textures
-    for (auto& glyph : glyphs) {
-        glDeleteTextures(1, &glyph.second.textureID);
     }
 }
 
@@ -139,77 +134,22 @@ void Engine::render(int width, int height) {
     viewportHeight = height - TOOLBAR_HEIGHT;
     int contentAreaHeight = height - TOOLBAR_HEIGHT;
 
-    // macOS-style momentum scrolling
-    float maxScroll = std::max(0.0f, contentHeight - contentAreaHeight);
-
-    // Natural deceleration: friction increases as velocity decreases
-    float absVel = std::abs(scrollVelocity);
-    float friction;
-    if (absVel > 50.0f) {
-        friction = 0.95f;  // High speed: gentle friction
-    } else if (absVel > 10.0f) {
-        friction = 0.92f;  // Medium speed: moderate friction
-    } else if (absVel > 1.0f) {
-        friction = 0.85f;  // Low speed: stronger friction
-    } else {
-        friction = 0.0f;   // Stop completely when very slow
-        scrollVelocity = 0;
-    }
-    scrollVelocity *= friction;
-    scrollOffset += scrollVelocity;
-
-    // Rubber-banding at edges
-    float overscrollTop = -scrollOffset;
-    float overscrollBottom = scrollOffset - maxScroll;
-
-    if (overscrollTop > 0) {
-        // Overscrolled past top - spring back
-        float springForce = overscrollTop * 0.15f;
-        scrollVelocity += springForce;
-        // Dampen velocity when overscrolled
-        if (scrollVelocity < 0) {
-            scrollVelocity *= 0.7f;
-        }
-    } else if (overscrollBottom > 0) {
-        // Overscrolled past bottom - spring back
-        float springForce = overscrollBottom * 0.15f;
-        scrollVelocity -= springForce;
-        // Dampen velocity when overscrolled
-        if (scrollVelocity > 0) {
-            scrollVelocity *= 0.7f;
-        }
-    }
-
-    // Soft clamp - allow slight overscroll but limit it
-    float maxOverscroll = 100.0f;
-    if (scrollOffset < -maxOverscroll) {
-        scrollOffset = -maxOverscroll;
-        scrollVelocity = 0;
-    }
-    if (scrollOffset > maxScroll + maxOverscroll) {
-        scrollOffset = maxScroll + maxOverscroll;
-        scrollVelocity = 0;
-    }
+    // Clamp scroll to valid range (with bottom margin for breathing room)
+    float bottomMargin = 60.0f;
+    float maxScroll = std::max(0.0f, contentHeight - contentAreaHeight + bottomMargin);
+    if (scrollOffset < 0) scrollOffset = 0;
+    if (scrollOffset > maxScroll) scrollOffset = maxScroll;
 
     glViewport(0, 0, width, height);
     glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, width, height, 0, -1, 1);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-
-    // Render toolbar at top (fixed position)
+    // Render toolbar at top (fixed position, no scroll)
     renderToolbar(width);
 
     // Set up clipping for content area (below toolbar)
     glEnable(GL_SCISSOR_TEST);
     glScissor(0, 0, width, height - TOOLBAR_HEIGHT);
-
-    // Apply scroll offset and toolbar offset
-    glTranslatef(0, TOOLBAR_HEIGHT - scrollOffset, 0);
 
     if (markdownRenderer) {
         int domCursorPos = markdownRenderer->rawToDOM(cursorPos);
@@ -235,7 +175,10 @@ void Engine::render(int width, int height) {
         markdownRenderer->setCaretState(caret);
 
         Size viewportSize(width, contentAreaHeight);
-        markdownRenderer->render(viewportSize);
+        // Pass scroll offset: TOOLBAR_HEIGHT shifts content below toolbar,
+        // -scrollOffset shifts content up for scrolling
+        float contentScrollOffset = TOOLBAR_HEIGHT - scrollOffset;
+        markdownRenderer->render(viewportSize, contentScrollOffset);
 
         contentHeight = markdownRenderer->getContentHeight();
 
@@ -245,9 +188,6 @@ void Engine::render(int width, int height) {
 
     // Disable scissor test before drawing fixed UI elements
     glDisable(GL_SCISSOR_TEST);
-
-    // Reset transform for scrollbar (fixed position UI)
-    glLoadIdentity();
 
     // Draw scrollbar if content is taller than content area
     if (contentHeight > contentAreaHeight) {
@@ -270,50 +210,22 @@ void Engine::render(int width, int height) {
             thumbHeight = std::max(20.0f, thumbHeight);
         }
 
-        // Thumb position - clamp ratio but allow visual feedback
+        // Thumb position
         float scrollRatio = (maxScroll > 0) ? scrollOffset / maxScroll : 0;
         float thumbY;
         if (scrollRatio < 0) {
-            // Overscrolled past top - thumb stays at top but shrinks
             thumbY = trackTop;
         } else if (scrollRatio > 1) {
-            // Overscrolled past bottom - thumb stays at bottom
             thumbY = trackTop + trackHeight - thumbHeight;
         } else {
             thumbY = trackTop + scrollRatio * (trackHeight - thumbHeight);
         }
 
-        glDisable(GL_TEXTURE_2D);
-
-        // Thumb with rounded appearance
-        float radius = scrollbarWidth / 2.0f;
-        float centerX = trackX + radius;
-
-        glColor4f(0.5f, 0.5f, 0.5f, 0.5f);
-        glBegin(GL_QUADS);
-        glVertex2f(trackX, thumbY + radius);
-        glVertex2f(trackX + scrollbarWidth, thumbY + radius);
-        glVertex2f(trackX + scrollbarWidth, thumbY + thumbHeight - radius);
-        glVertex2f(trackX, thumbY + thumbHeight - radius);
-        glEnd();
-
-        // Top cap
-        glBegin(GL_TRIANGLE_FAN);
-        glVertex2f(centerX, thumbY + radius);
-        for (int i = 0; i <= 12; i++) {
-            float angle = 3.14159f + (3.14159f * i / 12);
-            glVertex2f(centerX + radius * cos(angle), thumbY + radius + radius * sin(angle));
-        }
-        glEnd();
-
-        // Bottom cap
-        glBegin(GL_TRIANGLE_FAN);
-        glVertex2f(centerX, thumbY + thumbHeight - radius);
-        for (int i = 0; i <= 12; i++) {
-            float angle = (3.14159f * i / 12);
-            glVertex2f(centerX + radius * cos(angle), thumbY + thumbHeight - radius + radius * sin(angle));
-        }
-        glEnd();
+        // Draw scrollbar thumb using batch renderer (ES 2.0 compatible)
+        uiRenderer->setViewport(width, height);
+        uiRenderer->begin();
+        uiRenderer->drawRect(trackX, thumbY, scrollbarWidth, thumbHeight, 0.5f, 0.5f, 0.5f, 0.5f);
+        uiRenderer->flush();
     }
 }
 
@@ -560,8 +472,8 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
 
 void Engine::handleScroll(double xoffset, double yoffset) {
     (void)xoffset;
-    // Lower multiplier for less sensitive scrolling (macOS-like feel)
-    scrollVelocity += -yoffset * 6.0f;
+    // Direct scroll - multiply by line height for reasonable speed
+    scrollOffset += -yoffset * 40.0f;
 }
 
 void Engine::handleMouse(int button, int action, int mods, double x, double y) {
@@ -679,107 +591,10 @@ bool Engine::initFreeType() {
 
 bool Engine::loadFont(const char* fontPath) {
     if (FT_New_Face(ft, fontPath, 0, &face)) {
-        return false; // Failed to load font
+        return false;
     }
-    
-    // Set size to load glyphs as (48 pixel height)
-    FT_Set_Pixel_Sizes(face, 0, 24);
-    
     fontLoaded = true;
-    
-    // Load basic ASCII characters
-    for (unsigned char c = 32; c < 127; c++) {
-        loadGlyph(c);
-    }
-    
     return true;
-}
-
-void Engine::loadGlyph(char c) {
-    if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
-        std::cerr << "Failed to load glyph for: " << c << std::endl;
-        return;
-    }
-
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_ALPHA,
-        face->glyph->bitmap.width,
-        face->glyph->bitmap.rows,
-        0,
-        GL_ALPHA,
-        GL_UNSIGNED_BYTE,
-        face->glyph->bitmap.buffer
-    );
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    Glyph glyph = {
-        texture,
-        (int)face->glyph->bitmap.width,
-        (int)face->glyph->bitmap.rows,
-        (int)face->glyph->bitmap_left,
-        (int)face->glyph->bitmap_top,
-        (int)(face->glyph->advance.x >> 6)
-    };
-
-    glyphs[c] = glyph;
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-void Engine::renderChar(char c, float x, float y) {
-    if (glyphs.find(c) == glyphs.end()) {
-        return;
-    }
-    
-    Glyph& g = glyphs[c];
-    
-    float xpos = x + g.bearingX;
-    float ypos = y - g.bearingY;  // Simple baseline calculation
-    float w = g.width;
-    float h = g.height;
-    
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, g.textureID);
-    glColor3f(1.0f, 1.0f, 1.0f);
-    
-    glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos, ypos + h);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h); 
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos, ypos);
-    glEnd();
-    
-    glBindTexture(GL_TEXTURE_2D, 0);
-    glDisable(GL_TEXTURE_2D);
-}
-
-void Engine::renderText(const char* text, float x, float y) {
-    float currentX = x;
-    float currentY = y;
-    
-    for (const char* p = text; *p; p++) {
-        if (*p == '\n') {
-            currentY += 24;
-            currentX = x;
-            continue;
-        }
-        
-        if (glyphs.find(*p) != glyphs.end()) {
-            renderChar(*p, currentX, currentY);
-            currentX += glyphs[*p].advance;
-        }
-    }
 }
 
 void Engine::moveCursor(int delta, bool extendSelection) {
@@ -1140,25 +955,26 @@ void Engine::undo() {
 }
 
 void Engine::renderToolbar(int width) {
-    glDisable(GL_TEXTURE_2D);
+    // Initialize UI renderer on first use
+    if (!uiRendererInitialized) {
+        uiAtlas = std::make_unique<GlyphAtlas>(512, 512);
+        uiRenderer = std::make_unique<BatchRenderer>();
+        uiAtlas->init();
+        uiRenderer->init();
+        uiRenderer->setAtlas(uiAtlas.get());
+        uiRendererInitialized = true;
+    }
+
+    uiRenderer->setViewport(width, viewportHeight > 0 ? viewportHeight : 600);
+    uiRenderer->begin();
 
     // Draw toolbar background (light gray)
-    glColor3f(0.95f, 0.95f, 0.95f);
-    glBegin(GL_QUADS);
-    glVertex2f(0, 0);
-    glVertex2f(width, 0);
-    glVertex2f(width, TOOLBAR_HEIGHT);
-    glVertex2f(0, TOOLBAR_HEIGHT);
-    glEnd();
+    uiRenderer->drawRect(0, 0, width, TOOLBAR_HEIGHT, 0.95f, 0.95f, 0.95f, 1.0f);
 
     // Draw bottom border
-    glColor3f(0.8f, 0.8f, 0.8f);
-    glBegin(GL_LINES);
-    glVertex2f(0, TOOLBAR_HEIGHT);
-    glVertex2f(width, TOOLBAR_HEIGHT);
-    glEnd();
+    uiRenderer->drawRect(0, TOOLBAR_HEIGHT - 1, width, 1, 0.8f, 0.8f, 0.8f, 1.0f);
 
-    // Button definitions: x position, width, label
+    // Button definitions
     struct Button {
         float x;
         float w;
@@ -1171,12 +987,12 @@ void Engine::renderToolbar(int width) {
     float spacing = 8.0f;
 
     Button buttons[] = {
-        {startX, 30, "B"},           // Bold
-        {0, 24, "I"},                // Italic
-        {0, 36, "H1"},               // Heading 1
-        {0, 36, "H2"},               // Heading 2
-        {0, 36, "H3"},               // Heading 3
-        {0, 50, "Link"}              // Link
+        {startX, 30, "B"},
+        {0, 24, "I"},
+        {0, 36, "H1"},
+        {0, 36, "H2"},
+        {0, 36, "H3"},
+        {0, 50, "Link"}
     };
 
     // Calculate positions
@@ -1187,68 +1003,33 @@ void Engine::renderToolbar(int width) {
     }
 
     // Draw buttons
-    glEnable(GL_TEXTURE_2D);
     for (int i = 0; i < 6; i++) {
         Button& btn = buttons[i];
 
-        // Button background
-        glDisable(GL_TEXTURE_2D);
-        glColor3f(1.0f, 1.0f, 1.0f);
-        glBegin(GL_QUADS);
-        glVertex2f(btn.x, buttonY);
-        glVertex2f(btn.x + btn.w, buttonY);
-        glVertex2f(btn.x + btn.w, buttonY + buttonHeight);
-        glVertex2f(btn.x, buttonY + buttonHeight);
-        glEnd();
+        // Button background (white)
+        uiRenderer->drawRect(btn.x, buttonY, btn.w, buttonHeight, 1.0f, 1.0f, 1.0f, 1.0f);
 
-        // Button border
-        glColor3f(0.7f, 0.7f, 0.7f);
-        glBegin(GL_LINE_LOOP);
-        glVertex2f(btn.x, buttonY);
-        glVertex2f(btn.x + btn.w, buttonY);
-        glVertex2f(btn.x + btn.w, buttonY + buttonHeight);
-        glVertex2f(btn.x, buttonY + buttonHeight);
-        glEnd();
+        // Button border (draw as 4 thin rects)
+        float bw = 1.0f;  // border width
+        uiRenderer->drawRect(btn.x, buttonY, btn.w, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // top
+        uiRenderer->drawRect(btn.x, buttonY + buttonHeight - bw, btn.w, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // bottom
+        uiRenderer->drawRect(btn.x, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // left
+        uiRenderer->drawRect(btn.x + btn.w - bw, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // right
 
-        // Draw label text using glyphs
-        glEnable(GL_TEXTURE_2D);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glColor4f(0.2f, 0.2f, 0.2f, 1.0f);
-
-        // Calculate text width for centering
+        // Draw label text
         float textWidth = 0;
         for (const char* p = btn.label; *p; p++) {
-            if (glyphs.find(*p) != glyphs.end()) {
-                textWidth += glyphs[*p].advance;
-            }
+            const AtlasGlyph* g = uiAtlas->get(*p, 16, TextStyle::Normal, false, face);
+            if (g) textWidth += g->advance;
         }
 
         float textX = btn.x + (btn.w - textWidth) / 2.0f;
-        float textY = buttonY + buttonHeight / 2.0f + 6.0f;  // Approximate vertical center
+        float textY = buttonY + buttonHeight / 2.0f + 6.0f;
 
-        for (const char* p = btn.label; *p; p++) {
-            if (glyphs.find(*p) != glyphs.end()) {
-                Glyph& g = glyphs[*p];
-                float xpos = textX + g.bearingX;
-                float ypos = textY - g.bearingY;
-                float w = g.width;
-                float h = g.height;
-
-                glBindTexture(GL_TEXTURE_2D, g.textureID);
-                glBegin(GL_QUADS);
-                glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos, ypos + h);
-                glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);
-                glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
-                glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos, ypos);
-                glEnd();
-
-                textX += g.advance;
-            }
-        }
+        uiRenderer->drawText(btn.label, textX, textY, 0.2f, 0.2f, 0.2f, 1.0f, 16, TextStyle::Normal, false, face);
     }
 
-    glBindTexture(GL_TEXTURE_2D, 0);
+    uiRenderer->flush();
 }
 
 bool Engine::handleToolbarClick(double x, double y) {

@@ -1,42 +1,21 @@
 #pragma once
 #include "paint_operations.h"
+#include "glyph_atlas.h"
+#include "batch_renderer.h"
 #include <map>
 #include <vector>
+#include <memory>
 #include <cstdint>
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <jpeglib.h>
-
-struct GlyphInfo {
-    unsigned int textureID;
-    int width;
-    int height;
-    int bearingX;
-    int bearingY;
-    int advance;
-};
-
-// Key for glyph cache: Unicode code point + font size + style + monospace
-struct GlyphKey {
-    uint32_t codepoint;
-    int fontSize;
-    uint8_t style;  // TextStyle as uint8_t
-    bool monospace;
-
-    bool operator<(const GlyphKey& other) const {
-        if (codepoint != other.codepoint) return codepoint < other.codepoint;
-        if (fontSize != other.fontSize) return fontSize < other.fontSize;
-        if (style != other.style) return style < other.style;
-        return monospace < other.monospace;
-    }
-};
 
 class Rasterizer {
 public:
     Rasterizer();
     ~Rasterizer();
 
-    void rasterize(const DisplayList& displayList, const Rect& viewport);
+    void rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY = 0.0f);
     bool initializeFont();
 
 private:
@@ -81,14 +60,10 @@ private:
     bool loadFont(const char* fontPath, int faceIndex, FT_Face* outFace);
     bool loadFontFamily(const char* fontPath);
     bool loadMonoFont();
-    void renderCodepoint(uint32_t codepoint, float x, float y, const Color& color);
-    void renderText(const std::string& text, float x, float y, const Color& color, TextStyle style, bool monospace);
     FT_Face getFaceForStyle(TextStyle style, bool monospace);
 
-    // Glyph caching
-    std::map<GlyphKey, GlyphInfo> glyphCache;
-    const GlyphInfo* getGlyph(uint32_t codepoint, int fontSize, TextStyle style, bool monospace);
-    int currentFontSize;
-    TextStyle currentStyle;
-    bool currentMonospace;
+    // GL2 renderer
+    std::unique_ptr<GlyphAtlas> atlas;
+    std::unique_ptr<BatchRenderer> batchRenderer;
+    bool gl2Initialized;
 };
