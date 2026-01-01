@@ -17,8 +17,10 @@ public:
     void handleKeyboard(int key, int scancode, int action, int mods);
     void handleScroll(double xoffset, double yoffset);
     void handleMouse(int button, int action, int mods, double x, double y);
+    void handleMouseMove(double x, double y);
 
 private:
+    bool leftMouseHeld;
     float scrollOffset;
     char inputBuffer[1024];
     int inputLength;

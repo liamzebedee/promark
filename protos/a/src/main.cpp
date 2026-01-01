@@ -16,11 +16,30 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     }
 }
 
+// Get scale factor for Retina displays
+void getDisplayScale(GLFWwindow* window, float& scaleX, float& scaleY) {
+    int winW, winH, fbW, fbH;
+    glfwGetWindowSize(window, &winW, &winH);
+    glfwGetFramebufferSize(window, &fbW, &fbH);
+    scaleX = (winW > 0) ? (float)fbW / winW : 1.0f;
+    scaleY = (winH > 0) ? (float)fbH / winH : 1.0f;
+}
+
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     if (engine) {
         double xpos, ypos;
         glfwGetCursorPos(window, &xpos, &ypos);
-        engine->handleMouse(button, action, mods, xpos, ypos);
+        float scaleX, scaleY;
+        getDisplayScale(window, scaleX, scaleY);
+        engine->handleMouse(button, action, mods, xpos * scaleX, ypos * scaleY);
+    }
+}
+
+void cursorPosCallback(GLFWwindow* window, double xpos, double ypos) {
+    if (engine) {
+        float scaleX, scaleY;
+        getDisplayScale(window, scaleX, scaleY);
+        engine->handleMouseMove(xpos * scaleX, ypos * scaleY);
     }
 }
 
@@ -45,6 +64,11 @@ int main() {
     glfwSetKeyCallback(window, keyCallback);
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
+    glfwSetCursorPosCallback(window, cursorPosCallback);
+
+    // Set I-beam cursor for text editing
+    GLFWcursor* ibeamCursor = glfwCreateStandardCursor(GLFW_IBEAM_CURSOR);
+    glfwSetCursor(window, ibeamCursor);
 
     engine = new Engine();
     if (!engine->initialize()) {
@@ -65,6 +89,7 @@ int main() {
     }
 
     delete engine;
+    glfwDestroyCursor(ibeamCursor);
     glfwTerminate();
     return 0;
 }

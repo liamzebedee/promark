@@ -5,7 +5,7 @@
 #include <cstring>
 #include <algorithm>
 
-Engine::Engine() : scrollOffset(0.0f), inputLength(0), fontLoaded(false), 
+Engine::Engine() : leftMouseHeld(false), scrollOffset(0.0f), inputLength(0), fontLoaded(false),
                    cursorPos(0), selectionStart(0), selectionEnd(0), hasSelection(false) {
     memset(inputBuffer, 0, sizeof(inputBuffer));
     
@@ -280,13 +280,29 @@ void Engine::handleScroll(double xoffset, double yoffset) {
 void Engine::handleMouse(int button, int action, int mods, double x, double y) {
     (void)mods;
 
-    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
-        if (markdownRenderer) {
-            // Convert click position to raw cursor position
-            cursorPos = markdownRenderer->hitTest(static_cast<float>(x), static_cast<float>(y));
-            cursorPos = std::max(0, std::min(cursorPos, inputLength));
-            hasSelection = false;
+    if (button == GLFW_MOUSE_BUTTON_LEFT) {
+        if (action == GLFW_PRESS) {
+            leftMouseHeld = true;
+            if (markdownRenderer) {
+                cursorPos = markdownRenderer->hitTest(static_cast<float>(x), static_cast<float>(y));
+                cursorPos = std::max(0, std::min(cursorPos, inputLength));
+                selectionStart = cursorPos;
+                selectionEnd = cursorPos;
+                hasSelection = false;
+            }
+        } else if (action == GLFW_RELEASE) {
+            leftMouseHeld = false;
         }
+    }
+}
+
+void Engine::handleMouseMove(double x, double y) {
+    if (leftMouseHeld && markdownRenderer) {
+        int newPos = markdownRenderer->hitTest(static_cast<float>(x), static_cast<float>(y));
+        newPos = std::max(0, std::min(newPos, inputLength));
+        cursorPos = newPos;
+        selectionEnd = newPos;
+        hasSelection = (selectionStart != selectionEnd);
     }
 }
 

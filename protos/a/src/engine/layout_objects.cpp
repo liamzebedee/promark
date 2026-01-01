@@ -44,8 +44,8 @@ void LayoutObject::layout(const Size& availableSpace) {
 
 float LayoutObject::getFontSize() const {
     // Base implementation - different object types override this
-    // Base size: 11pt ≈ 22px on Retina (2x DPI)
-    constexpr float baseFontSize = 22.0f;
+    // Base size: 14pt ≈ 28px on Retina (2x DPI)
+    constexpr float baseFontSize = 28.0f;
 
     switch (sourceObject->getType()) {
         case MarkdownObjectType::Heading: {

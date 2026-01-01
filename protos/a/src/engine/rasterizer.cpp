@@ -82,15 +82,16 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
     if (!fontLoaded) {
         return;
     }
-    
+
     const Point& position = op.getPosition();
     const std::string& text = op.getText();
     const Color& color = op.getColor();
     float fontSize = op.getFontSize();
-    
+
     // Set font size
     FT_Set_Pixel_Sizes(face, 0, (int)fontSize);
-    
+
+    // position.y is the baseline
     renderText(text, position.x, position.y, color);
 }
 
@@ -392,84 +393,118 @@ bool Rasterizer::loadFont(const char* fontPath) {
 
 
 void Rasterizer::renderChar(char c, float x, float y, const Color& color) {
-    // Load glyph directly from FreeType each time
+    // Load glyph
     if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
-        return; // Failed to load glyph
-    }
-
-    // Skip empty glyphs (like spaces)
-    if (face->glyph->bitmap.width == 0 || face->glyph->bitmap.rows == 0) {
         return;
     }
 
-    // Create temporary texture for this glyph
+    FT_GlyphSlot g = face->glyph;
+
+    // Skip empty glyphs (spaces, etc)
+    if (g->bitmap.width == 0 || g->bitmap.rows == 0) {
+        return;
+    }
+
+    // Create texture
     unsigned int texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_ALPHA,
-        face->glyph->bitmap.width,
-        face->glyph->bitmap.rows,
-        0,
-        GL_ALPHA,
-        GL_UNSIGNED_BYTE,
-        face->glyph->bitmap.buffer
-    );
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA,
+                 g->bitmap.width, g->bitmap.rows,
+                 0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    // Render the glyph
-    float xpos = x + face->glyph->bitmap_left;
-    float ypos = y - face->glyph->bitmap_top;
-    float w = face->glyph->bitmap.width;
-    float h = face->glyph->bitmap.rows;
-    
-    // Enable blending for text
+    // Position: x is pen position, y is baseline
+    // bitmap_left: horizontal offset from pen position
+    // bitmap_top: vertical offset from baseline (positive = above baseline)
+    float xpos = x + g->bitmap_left;
+    float ypos = y - g->bitmap_top;  // Top of glyph in top-left-origin coords
+    float w = g->bitmap.width;
+    float h = g->bitmap.rows;
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_TEXTURE_2D);
     glColor4ub(color.r, color.g, color.b, color.a);
-    
+
+    // Draw quad - FreeType bitmap is top-down, so flip texture coords
     glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos, ypos + h);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h); 
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos, ypos);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos,     ypos);      // top-left
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);      // top-right
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);  // bottom-right
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos,     ypos + h);  // bottom-left
     glEnd();
-    
+
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_BLEND);
-    
-    // Clean up temporary texture
     glDeleteTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, 0);
 }
 
 void Rasterizer::renderText(const std::string& text, float x, float y, const Color& color) {
-    float currentX = x;
-    float currentY = y;
-    
-    for (const char* p = text.c_str(); *p; p++) {
-        if (*p == '\n') {
-            currentY += 24;
-            currentX = x;
+    // Round baseline to integer to ensure consistent glyph positioning
+    float penX = std::round(x);
+    float baseline = std::round(y);
+
+    for (char c : text) {
+        if (c == '\n') {
+            continue;  // Newlines handled by layout
+        }
+
+        // Load glyph to get metrics and render
+        if (FT_Load_Char(face, c, FT_LOAD_RENDER)) {
             continue;
         }
-        
-        renderChar(*p, currentX, currentY, color);
-        
-        // Advance cursor - load char to get advance
-        if (FT_Load_Char(face, *p, FT_LOAD_DEFAULT) == 0) {
-            currentX += face->glyph->advance.x >> 6;
+
+        FT_GlyphSlot g = face->glyph;
+
+        // Render if glyph has a bitmap
+        if (g->bitmap.width > 0 && g->bitmap.rows > 0) {
+            // Create texture
+            unsigned int texture;
+            glGenTextures(1, &texture);
+            glBindTexture(GL_TEXTURE_2D, texture);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA,
+                         g->bitmap.width, g->bitmap.rows,
+                         0, GL_ALPHA, GL_UNSIGNED_BYTE, g->bitmap.buffer);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+            // Calculate position (round to avoid subpixel jitter)
+            float xpos = std::round(penX + g->bitmap_left);
+            float ypos = std::round(baseline - g->bitmap_top);
+            float w = g->bitmap.width;
+            float h = g->bitmap.rows;
+
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glEnable(GL_TEXTURE_2D);
+            glColor4ub(color.r, color.g, color.b, color.a);
+
+            glBegin(GL_QUADS);
+                glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos,     ypos);
+                glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
+                glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);
+                glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos,     ypos + h);
+            glEnd();
+
+            glDisable(GL_TEXTURE_2D);
+            glDisable(GL_BLEND);
+            glDeleteTextures(1, &texture);
         }
+
+        // Advance pen position
+        penX += g->advance.x >> 6;
     }
 }
 

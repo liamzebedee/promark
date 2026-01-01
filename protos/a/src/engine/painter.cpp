@@ -232,7 +232,7 @@ DOMPositionResult Painter::findLayoutForPosition(const LayoutObject* root, int d
     int currentPos = 0;
     for (const auto* layout : contentLayouts) {
         int len = layout->getDOMLength();
-        if (domPosition < currentPos + len) {
+        if (domPosition <= currentPos + len) {
             // Found the containing object
             result.layout = layout;
             result.localOffset = domPosition - currentPos;

@@ -1,6 +1,9 @@
-- The final aspect is the cursor, UI, and typing.
+- shortcuts: copy-paste, ctrl+a
+- cursor, UI, and typing.
     - The cursor is a flashing indicator on the current line or block. 
     - Typing on the keyboard inserts characters at the position of the cursor, which re-renders. 
     - Backspace on the keyboard deletes text and images. 
+- styling
     - Quote blocks have a thick gray left border (5px) and are indented from that.
     - Code has a background color is rendered using fixed-width font rendering.
+- scrolling
