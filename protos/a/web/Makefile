@@ -33,7 +33,7 @@ MEM_FLAGS = -sALLOW_MEMORY_GROWTH=1 \
             -sINITIAL_MEMORY=67108864
 
 # Export settings
-EXPORT_FLAGS = -sEXPORTED_FUNCTIONS='["_main","_setContent","_getContent","_isDirty","_markClean","_malloc","_free"]' \
+EXPORT_FLAGS = -sEXPORTED_FUNCTIONS='["_main","_setContent","_getContent","_getSelectedText","_isDirty","_markClean","_handleKey","_insertText","_malloc","_free"]' \
                -sEXPORTED_RUNTIME_METHODS='["UTF8ToString","stringToUTF8","lengthBytesUTF8"]'
 
 # Embed fonts and shaders

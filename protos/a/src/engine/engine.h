@@ -30,6 +30,7 @@ public:
     // File operations
     void setContent(const std::string& content);
     std::string getContent() const;
+    std::string getSelectedText() const;
     bool isDirty() const { return dirty; }
     void markClean() { dirty = false; }
     bool shouldClose() const { return wantsToClose; }
@@ -104,6 +105,7 @@ private:
 
     // Toolbar
     static const int TOOLBAR_HEIGHT = 40;
+    int viewportWidth;
     void renderToolbar(int width);
     bool handleToolbarClick(double x, double y);
 
@@ -125,4 +127,8 @@ private:
     double lastBlinkTime;
     bool caretVisible;
     void updateCaretAnimation();
+
+    // Raw mode toggle
+    bool showRaw;
+    void renderRawText(int width, int height);
 };

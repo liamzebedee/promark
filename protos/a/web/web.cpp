@@ -9,13 +9,7 @@
 static Engine* engine = nullptr;
 static GLFWwindow* window = nullptr;
 
-// Callbacks
-void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-    if (engine) {
-        engine->handleKeyboard(key, scancode, action, mods);
-    }
-}
-
+// Mouse callbacks only - keyboard handled by JavaScript
 void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
     if (engine) {
         engine->handleScroll(xoffset, yoffset);
@@ -25,16 +19,30 @@ void scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
 void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
     double x, y;
     glfwGetCursorPos(window, &x, &y);
-    double dpr = emscripten_get_device_pixel_ratio();
+
+    // Convert from window coordinates to framebuffer coordinates
+    int winW, winH, fbW, fbH;
+    glfwGetWindowSize(window, &winW, &winH);
+    glfwGetFramebufferSize(window, &fbW, &fbH);
+    double scaleX = (double)fbW / winW;
+    double scaleY = (double)fbH / winH;
+
     if (engine) {
-        engine->handleMouse(button, action, mods, x * dpr, y * dpr);
+        engine->handleMouse(button, action, mods, x * scaleX, y * scaleY);
     }
 }
 
 void cursorPosCallback(GLFWwindow* window, double x, double y) {
-    double dpr = emscripten_get_device_pixel_ratio();
-    double sx = x * dpr;
-    double sy = y * dpr;
+    // Convert from window coordinates to framebuffer coordinates
+    int winW, winH, fbW, fbH;
+    glfwGetWindowSize(window, &winW, &winH);
+    glfwGetFramebufferSize(window, &fbW, &fbH);
+    double scaleX = (double)fbW / winW;
+    double scaleY = (double)fbH / winH;
+
+    double sx = x * scaleX;
+    double sy = y * scaleY;
+
     if (engine) {
         engine->handleMouseMove(sx, sy);
 
@@ -44,12 +52,6 @@ void cursorPosCallback(GLFWwindow* window, double x, double y) {
         } else {
             glfwSetCursor(window, glfwCreateStandardCursor(GLFW_IBEAM_CURSOR));
         }
-    }
-}
-
-void charCallback(GLFWwindow* window, unsigned int codepoint) {
-    if (engine && codepoint >= 32 && codepoint < 127) {
-        engine->handleKeyboard(codepoint, 0, GLFW_PRESS, 0);
     }
 }
 
@@ -97,6 +99,32 @@ void markClean() {
     }
 }
 
+// Get selected text for clipboard
+EMSCRIPTEN_KEEPALIVE
+const char* getSelectedText() {
+    static std::string selected;
+    if (engine) {
+        selected = engine->getSelectedText();
+        return selected.c_str();
+    }
+    return "";
+}
+
+// Keyboard input from JavaScript
+EMSCRIPTEN_KEEPALIVE
+void handleKey(int key, int action, int mods) {
+    if (engine) {
+        engine->handleKeyboard(key, 0, action, mods);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void insertText(const char* text) {
+    if (engine) {
+        engine->insertText(std::string(text));
+    }
+}
+
 }
 
 int main() {
@@ -110,12 +138,8 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
     glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
 
-    // Scale window size for HiDPI displays
-    double dpr = emscripten_get_device_pixel_ratio();
-    int windowW = (int)(900 * dpr);
-    int windowH = (int)(700 * dpr);
-
-    window = glfwCreateWindow(windowW, windowH, "MD Editor", nullptr, nullptr);
+    // Create window at CSS pixel size - framebuffer will be scaled automatically for HiDPI
+    window = glfwCreateWindow(900, 700, "MD Editor", nullptr, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
@@ -124,12 +148,13 @@ int main() {
 
     glfwMakeContextCurrent(window);
 
-    // Set up callbacks
-    glfwSetKeyCallback(window, keyCallback);
+    // Set up callbacks (keyboard handled by JavaScript)
     glfwSetScrollCallback(window, scrollCallback);
     glfwSetMouseButtonCallback(window, mouseButtonCallback);
     glfwSetCursorPosCallback(window, cursorPosCallback);
-    glfwSetCharCallback(window, charCallback);
+    // Disable GLFW keyboard handling - we handle it in JS
+    glfwSetKeyCallback(window, nullptr);
+    glfwSetCharCallback(window, nullptr);
 
     // Create and initialize engine
     engine = new Engine();

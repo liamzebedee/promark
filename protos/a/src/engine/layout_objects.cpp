@@ -1,4 +1,5 @@
 #include "layout_objects.h"
+#include "typography.h"
 #include "utf8.h"
 #include <jpeglib.h>
 #include "stb/stb_image.h"
@@ -45,31 +46,19 @@ void LayoutObject::layout(const Size& availableSpace) {
 }
 
 float LayoutObject::getFontSize() const {
-    // Base implementation - different object types override this
-    // Base size: 14pt ≈ 28px on Retina (2x DPI)
-    constexpr float baseFontSize = 28.0f;
-
     switch (sourceObject->getType()) {
         case MarkdownObjectType::Heading: {
             const HeadingObject* heading = static_cast<const HeadingObject*>(sourceObject);
-            switch (heading->getLevel()) {
-                case 1: return baseFontSize * 2.0f;    // 44px
-                case 2: return baseFontSize * 1.75f;   // 38.5px
-                case 3: return baseFontSize * 1.5f;    // 33px
-                case 4: return baseFontSize * 1.25f;   // 27.5px
-                case 5: return baseFontSize * 1.1f;    // 24.2px
-                case 6: return baseFontSize;           // 22px
-                default: return baseFontSize * 1.5f;
-            }
+            return Typography::headingSize(heading->getLevel());
         }
         case MarkdownObjectType::Text:
             // Text inherits font size from parent
             if (parent) {
                 return parent->getFontSize();
             }
-            return baseFontSize;
+            return Typography::BASE_FONT_SIZE;
         default:
-            return baseFontSize;
+            return Typography::BASE_FONT_SIZE;
     }
 }
 
@@ -163,7 +152,7 @@ float TextLayoutObject::getFontSize() const {
     if (parent) {
         return parent->getFontSize();
     }
-    return 16.0f; // Default body text
+    return Typography::BASE_FONT_SIZE;
 }
 
 void TextLayoutObject::layout(const Size& availableSpace) {

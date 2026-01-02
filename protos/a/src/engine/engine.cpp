@@ -1,4 +1,5 @@
 #include "engine.h"
+#include "typography.h"
 #ifdef __EMSCRIPTEN__
 #include <GLES2/gl2.h>
 #else
@@ -13,9 +14,10 @@
 Engine::Engine() : wantsToClose(false), leftMouseHeld(false), dirty(false), lastClickTime(0), lastClickX(0), lastClickY(0), clickCount(0),
                    scrollOffset(0.0f), contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
                    fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
-                   uiRendererInitialized(false),
+                   viewportWidth(800), uiRendererInitialized(false),
                    caretAnimX(0), caretAnimY(0),
-                   caretTargetX(0), caretTargetY(0), lastBlinkTime(0), caretVisible(true) {
+                   caretTargetX(0), caretTargetY(0), lastBlinkTime(0), caretVisible(true),
+                   showRaw(false) {
     // Allocate 10MB input buffer
     inputBuffer = new char[INPUT_BUFFER_SIZE];
     memset(inputBuffer, 0, INPUT_BUFFER_SIZE);
@@ -128,6 +130,7 @@ bool Engine::initialize() {
 }
 
 void Engine::render(int width, int height) {
+    viewportWidth = width;
     viewportHeight = height - TOOLBAR_HEIGHT;
     int contentAreaHeight = height - TOOLBAR_HEIGHT;
 
@@ -148,17 +151,20 @@ void Engine::render(int width, int height) {
     glEnable(GL_SCISSOR_TEST);
     glScissor(0, 0, width, height - TOOLBAR_HEIGHT);
 
-    if (markdownRenderer) {
+    // Update cursor blink (530ms cycle)
+    double currentTime = glfwGetTime();
+    if (currentTime - lastBlinkTime > 0.53) {
+        caretVisible = !caretVisible;
+        lastBlinkTime = currentTime;
+    }
+
+    if (showRaw) {
+        // Render raw text mode
+        renderRawText(width, height);
+    } else if (markdownRenderer) {
         int domCursorPos = markdownRenderer->rawToDOM(cursorPos);
         int domSelStart = markdownRenderer->rawToDOM(selectionStart);
         int domSelEnd = markdownRenderer->rawToDOM(selectionEnd);
-
-        // Update cursor blink (530ms cycle)
-        double currentTime = glfwGetTime();
-        if (currentTime - lastBlinkTime > 0.53) {
-            caretVisible = !caretVisible;
-            lastBlinkTime = currentTime;
-        }
 
         CaretState caret;
         caret.cursorPosition = domCursorPos;
@@ -249,6 +255,9 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 return;
             } else if (key == GLFW_KEY_Z) {
                 undo();
+                return;
+            } else if (key == GLFW_KEY_R) {
+                showRaw = !showRaw;
                 return;
             }
         }
@@ -964,6 +973,13 @@ std::string Engine::getContent() const {
     return std::string(inputBuffer, inputLength);
 }
 
+std::string Engine::getSelectedText() const {
+    if (!hasSelection) return "";
+    int start = std::min(selectionStart, selectionEnd);
+    int end = std::max(selectionStart, selectionEnd);
+    return std::string(inputBuffer + start, end - start);
+}
+
 void Engine::undo() {
     if (undoStack.empty()) return;
 
@@ -987,6 +1003,242 @@ void Engine::undo() {
     // Reset blink
     lastBlinkTime = glfwGetTime();
     caretVisible = true;
+}
+
+void Engine::renderRawText(int width, int height) {
+    // Initialize UI renderer if needed
+    if (!uiRendererInitialized) {
+        uiAtlas = std::make_unique<GlyphAtlas>(512, 512);
+        uiRenderer = std::make_unique<BatchRenderer>();
+        uiAtlas->init();
+        uiRenderer->init();
+        uiRenderer->setAtlas(uiAtlas.get());
+        uiRendererInitialized = true;
+    }
+
+    float fontSize = Typography::BASE_FONT_SIZE;
+    float lineHeight = fontSize * 1.2f;
+    float leftMargin = Typography::DOCUMENT_MARGIN;
+    float rightMargin = Typography::DOCUMENT_MARGIN;
+    float maxLineWidth = width - leftMargin - rightMargin;
+    float topMargin = TOOLBAR_HEIGHT + Typography::DOCUMENT_MARGIN - scrollOffset;
+
+    // Calculate character width for monospace
+    float charWidth = fontSize * 0.6f;
+    if (monoFace) {
+        FT_Set_Pixel_Sizes(monoFace, 0, static_cast<FT_UInt>(fontSize));
+        const AtlasGlyph* g = uiAtlas->get('M', fontSize, TextStyle::Normal, true, monoFace);
+        if (g) charWidth = g->advance;
+    }
+
+    // Build wrapped lines with syntax highlighting info
+    struct RenderChar {
+        char c;
+        float r, g, b;  // Color
+        int srcIndex;   // Original index in inputBuffer
+    };
+    struct RenderLine {
+        std::vector<RenderChar> chars;
+        float y;
+    };
+    std::vector<RenderLine> lines;
+
+    // Colors for syntax highlighting
+    auto colorDefault = [](float& r, float& g, float& b) { r = 0.2f; g = 0.2f; b = 0.2f; };
+    auto colorHeading = [](float& r, float& g, float& b) { r = 0.0f; g = 0.4f; b = 0.8f; };
+    auto colorCode = [](float& r, float& g, float& b) { r = 0.7f; g = 0.2f; b = 0.2f; };
+    auto colorLink = [](float& r, float& g, float& b) { r = 0.1f; g = 0.5f; b = 0.1f; };
+    auto colorBoldItalic = [](float& r, float& g, float& b) { r = 0.6f; g = 0.3f; b = 0.6f; };
+    auto colorList = [](float& r, float& g, float& b) { r = 0.8f; g = 0.5f; b = 0.0f; };
+    auto colorBlockquote = [](float& r, float& g, float& b) { r = 0.4f; g = 0.6f; b = 0.4f; };
+
+    // Parse and wrap text
+    float y = topMargin + fontSize;
+    float x = 0;
+    RenderLine currentLine;
+    currentLine.y = y;
+
+    bool inCodeBlock = false;
+    bool inInlineCode = false;
+    bool lineStart = true;
+    bool isHeadingLine = false;
+    bool isListLine = false;
+    bool isBlockquoteLine = false;
+
+    for (int i = 0; i < inputLength; i++) {
+        char c = inputBuffer[i];
+
+        // Detect line-level syntax at start of line
+        if (lineStart && c != '\n') {
+            // Check for code block fence
+            if (i + 2 < inputLength && inputBuffer[i] == '`' && inputBuffer[i+1] == '`' && inputBuffer[i+2] == '`') {
+                inCodeBlock = !inCodeBlock;
+            }
+            // Check for heading
+            if (!inCodeBlock && c == '#') {
+                isHeadingLine = true;
+            }
+            // Check for list item
+            if (!inCodeBlock && (c == '-' || c == '*' || c == '+' || (c >= '0' && c <= '9'))) {
+                isListLine = true;
+            }
+            // Check for blockquote
+            if (!inCodeBlock && c == '>') {
+                isBlockquoteLine = true;
+            }
+            lineStart = false;
+        }
+
+        if (c == '\n') {
+            lines.push_back(currentLine);
+            currentLine.chars.clear();
+            y += lineHeight;
+            currentLine.y = y;
+            x = 0;
+            lineStart = true;
+            isHeadingLine = false;
+            isListLine = false;
+            isBlockquoteLine = false;
+            continue;
+        }
+
+        // Check for inline code toggle
+        if (!inCodeBlock && c == '`') {
+            inInlineCode = !inInlineCode;
+        }
+
+        // Word wrap: if adding this char exceeds width, start new line
+        if (x + charWidth > maxLineWidth && !currentLine.chars.empty()) {
+            // Try to break at last space
+            int breakPoint = -1;
+            for (int j = (int)currentLine.chars.size() - 1; j >= 0; j--) {
+                if (currentLine.chars[j].c == ' ') {
+                    breakPoint = j;
+                    break;
+                }
+            }
+
+            if (breakPoint > 0) {
+                // Break at space
+                RenderLine wrappedLine;
+                wrappedLine.y = currentLine.y;
+                for (int j = 0; j <= breakPoint; j++) {
+                    wrappedLine.chars.push_back(currentLine.chars[j]);
+                }
+                lines.push_back(wrappedLine);
+
+                // Move remaining chars to new line
+                std::vector<RenderChar> remaining;
+                for (int j = breakPoint + 1; j < (int)currentLine.chars.size(); j++) {
+                    remaining.push_back(currentLine.chars[j]);
+                }
+                y += lineHeight;
+                currentLine.chars = remaining;
+                currentLine.y = y;
+                x = remaining.size() * charWidth;
+            } else {
+                // No space found, hard break
+                lines.push_back(currentLine);
+                currentLine.chars.clear();
+                y += lineHeight;
+                currentLine.y = y;
+                x = 0;
+            }
+        }
+
+        // Determine color
+        RenderChar rc;
+        rc.c = c;
+        rc.srcIndex = i;
+
+        if (inCodeBlock || inInlineCode) {
+            colorCode(rc.r, rc.g, rc.b);
+        } else if (isHeadingLine) {
+            colorHeading(rc.r, rc.g, rc.b);
+        } else if (isBlockquoteLine) {
+            colorBlockquote(rc.r, rc.g, rc.b);
+        } else if (isListLine && currentLine.chars.size() < 3) {
+            colorList(rc.r, rc.g, rc.b);
+        } else if (c == '*' || c == '_') {
+            colorBoldItalic(rc.r, rc.g, rc.b);
+        } else if (c == '[' || c == ']' || c == '(' || c == ')') {
+            colorLink(rc.r, rc.g, rc.b);
+        } else {
+            colorDefault(rc.r, rc.g, rc.b);
+        }
+
+        currentLine.chars.push_back(rc);
+        x += charWidth;
+    }
+    // Add final line
+    if (!currentLine.chars.empty() || lines.empty()) {
+        lines.push_back(currentLine);
+    }
+
+    uiRenderer->setViewport(width, height);
+    uiRenderer->begin();
+
+    // Draw selection background
+    int selStart = std::min(selectionStart, selectionEnd);
+    int selEnd = std::max(selectionStart, selectionEnd);
+    if (hasSelection && selStart != selEnd) {
+        for (const auto& line : lines) {
+            for (size_t j = 0; j < line.chars.size(); j++) {
+                int idx = line.chars[j].srcIndex;
+                if (idx >= selStart && idx < selEnd) {
+                    float selX = leftMargin + j * charWidth;
+                    uiRenderer->drawRect(selX, line.y - fontSize, charWidth, lineHeight, 0.68f, 0.84f, 1.0f, 0.7f);
+                }
+            }
+        }
+    }
+
+    // Render characters
+    for (const auto& line : lines) {
+        float lx = leftMargin;
+        for (const auto& rc : line.chars) {
+            if (monoFace) {
+                char str[2] = {rc.c, '\0'};
+                uiRenderer->drawText(str, lx, line.y, rc.r, rc.g, rc.b, 1.0f, fontSize, TextStyle::Normal, true, monoFace);
+            }
+            lx += charWidth;
+        }
+    }
+
+    // Draw cursor
+    if (caretVisible && !hasSelection) {
+        float cursorX = leftMargin;
+        float cursorY = topMargin + fontSize;
+        for (const auto& line : lines) {
+            bool found = false;
+            for (size_t j = 0; j < line.chars.size(); j++) {
+                if (line.chars[j].srcIndex == cursorPos) {
+                    cursorX = leftMargin + j * charWidth;
+                    cursorY = line.y;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+            // Check if cursor is at end of this line
+            if (!line.chars.empty() && line.chars.back().srcIndex == cursorPos - 1) {
+                cursorX = leftMargin + line.chars.size() * charWidth;
+                cursorY = line.y;
+            }
+        }
+        // Handle cursor at very end
+        if (cursorPos == inputLength && !lines.empty()) {
+            const auto& lastLine = lines.back();
+            cursorX = leftMargin + lastLine.chars.size() * charWidth;
+            cursorY = lastLine.y;
+        }
+        uiRenderer->drawRect(cursorX, cursorY - fontSize, 2.0f, lineHeight, 0.0f, 0.0f, 0.0f, 1.0f);
+    }
+
+    uiRenderer->flush();
+
+    // Content height for scrolling
+    contentHeight = (lines.size() + 1) * lineHeight + 40.0f;
 }
 
 void Engine::renderToolbar(int width) {
@@ -1064,6 +1316,35 @@ void Engine::renderToolbar(int width) {
         uiRenderer->drawText(btn.label, textX, textY, 0.2f, 0.2f, 0.2f, 1.0f, 16, TextStyle::Normal, false, face);
     }
 
+    // Draw "Raw" toggle button on the right side
+    float rawBtnWidth = 50.0f;
+    float rawBtnX = width - rawBtnWidth - 10.0f;
+
+    // Button background - highlighted if showRaw is active
+    if (showRaw) {
+        uiRenderer->drawRect(rawBtnX, buttonY, rawBtnWidth, buttonHeight, 0.85f, 0.9f, 1.0f, 1.0f);
+    } else {
+        uiRenderer->drawRect(rawBtnX, buttonY, rawBtnWidth, buttonHeight, 1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    // Button border
+    float bw = 1.0f;
+    uiRenderer->drawRect(rawBtnX, buttonY, rawBtnWidth, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // top
+    uiRenderer->drawRect(rawBtnX, buttonY + buttonHeight - bw, rawBtnWidth, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // bottom
+    uiRenderer->drawRect(rawBtnX, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // left
+    uiRenderer->drawRect(rawBtnX + rawBtnWidth - bw, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // right
+
+    // Draw "Raw" label
+    const char* rawLabel = "Raw";
+    float rawTextWidth = 0;
+    for (const char* p = rawLabel; *p; p++) {
+        const AtlasGlyph* g = uiAtlas->get(*p, 16, TextStyle::Normal, false, face);
+        if (g) rawTextWidth += g->advance;
+    }
+    float rawTextX = rawBtnX + (rawBtnWidth - rawTextWidth) / 2.0f;
+    float rawTextY = buttonY + buttonHeight / 2.0f + 6.0f;
+    uiRenderer->drawText(rawLabel, rawTextX, rawTextY, 0.2f, 0.2f, 0.2f, 1.0f, 16, TextStyle::Normal, false, face);
+
     uiRenderer->flush();
 }
 
@@ -1098,6 +1379,15 @@ bool Engine::handleToolbarClick(double x, double y) {
         }
 
         currentX += btnW + spacing;
+    }
+
+    // Check for "Raw" button click (on the right side)
+    float rawBtnWidth = 50.0f;
+    float rawBtnX = viewportWidth - rawBtnWidth - 10.0f;
+    if (x >= rawBtnX && x <= rawBtnX + rawBtnWidth &&
+        y >= buttonY && y <= buttonY + buttonHeight) {
+        showRaw = !showRaw;
+        return true;
     }
 
     return false;

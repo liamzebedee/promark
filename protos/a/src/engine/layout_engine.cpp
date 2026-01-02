@@ -1,4 +1,5 @@
 #include "layout_engine.h"
+#include "typography.h"
 #include <iostream>
 
 LayoutEngine::LayoutEngine() : fontFace(nullptr), monoFontFace(nullptr) {
@@ -130,31 +131,53 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
 
 void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& availableSpace) {
     // Block flow layout - stack children vertically
-    // Only root (Document) gets margins, children are positioned relative to parent
-    bool isRoot = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::Document);
-    bool isBlockQuote = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::BlockQuote);
-    bool isCodeBlock = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::CodeBlock);
-    bool isFrontmatter = (layoutObject->getSourceObject()->getType() == MarkdownObjectType::Frontmatter);
+    const MarkdownObject* sourceObj = layoutObject->getSourceObject();
+    MarkdownObjectType type = sourceObj->getType();
 
-    float marginLeft = isRoot ? 50.0f : 0.0f;
-    const float marginTop = isRoot ? 50.0f : 0.0f;
-    const float blockSpacing = 10.0f;
+    bool isRoot = (type == MarkdownObjectType::Document);
+    bool isBlockQuote = (type == MarkdownObjectType::BlockQuote);
+    bool isCodeBlock = (type == MarkdownObjectType::CodeBlock);
+    bool isFrontmatter = (type == MarkdownObjectType::Frontmatter);
+
+    float marginLeft = isRoot ? Typography::DOCUMENT_MARGIN : 0.0f;
+    const float marginTop = isRoot ? Typography::DOCUMENT_MARGIN : 0.0f;
 
     // Blockquotes get extra left indent for the gray bar
     if (isBlockQuote) {
-        marginLeft = 20.0f;  // Space for gray bar + padding
+        marginLeft = Typography::BLOCKQUOTE_INDENT;
     }
 
     // Code blocks and frontmatter get small internal padding
     float codeBlockPadding = 0.0f;
     if (isCodeBlock || isFrontmatter) {
-        marginLeft = 8.0f;
+        marginLeft = Typography::CODE_BLOCK_PADDING;
         codeBlockPadding = 6.0f;
     }
 
     float currentY = marginTop + codeBlockPadding;
+    bool isFirstVisibleChild = true;
 
     for (const auto& child : layoutObject->getChildren()) {
+        const MarkdownObject* childSource = child->getSourceObject();
+
+        // Skip empty paragraphs visually (they exist for cursor positioning but don't add space)
+        if (childSource->getType() == MarkdownObjectType::Paragraph) {
+            std::string text = childSource->getText();
+            // Check if paragraph is empty (only has empty text children)
+            bool isEmpty = true;
+            for (const auto& grandchild : childSource->getChildren()) {
+                if (!grandchild->getText().empty()) {
+                    isEmpty = false;
+                    break;
+                }
+            }
+            if (isEmpty) {
+                // Still layout it (for cursor positioning) but at zero height
+                child->setRect(Rect(marginLeft, currentY, availableSpace.width - marginLeft * 2, 0));
+                continue;
+            }
+        }
+
         Size childAvailableSpace(availableSpace.width - marginLeft * 2, availableSpace.height - currentY);
         performLayout(child.get(), childAvailableSpace);
 
@@ -166,7 +189,12 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
         child->setRect(Rect(childX, childY, childRect.size.width, childRect.size.height));
         propagatePositionToChildren(child.get(), childX, childY);
 
-        currentY += childRect.size.height + blockSpacing;
+        // Add spacing after this element (block spacing between elements)
+        currentY += childRect.size.height;
+        if (!isFirstVisibleChild || childRect.size.height > 0) {
+            currentY += Typography::BLOCK_SPACING;
+        }
+        isFirstVisibleChild = false;
     }
 
     // Add bottom padding for code blocks and frontmatter
