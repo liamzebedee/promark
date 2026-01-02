@@ -18,7 +18,17 @@ enum class MarkdownObjectType {
     Equation,
     List,
     ListItem,
+    Table,
+    TableRow,
+    TableCell,
     Text
+};
+
+// Table cell alignment
+enum class TableCellAlign {
+    Left,
+    Center,
+    Right
 };
 
 // Inline link range within text
@@ -33,6 +43,7 @@ enum class TextStyle : uint8_t {
     Normal = 0,
     Bold = 1 << 0,
     Italic = 1 << 1,
+    Code = 1 << 2,
     BoldItalic = Bold | Italic
 };
 
@@ -153,4 +164,34 @@ public:
 
 private:
     std::string content;
+};
+
+class TableObject : public MarkdownObject {
+public:
+    TableObject();
+    void setColumnAlignments(const std::vector<TableCellAlign>& alignments);
+    const std::vector<TableCellAlign>& getColumnAlignments() const;
+    int getColumnCount() const;
+
+private:
+    std::vector<TableCellAlign> columnAlignments;
+};
+
+class TableRowObject : public MarkdownObject {
+public:
+    TableRowObject(bool isHeader = false);
+    bool isHeader() const;
+
+private:
+    bool header;
+};
+
+class TableCellObject : public MarkdownObject {
+public:
+    TableCellObject(TableCellAlign align = TableCellAlign::Left);
+    TableCellAlign getAlignment() const;
+    void setAlignment(TableCellAlign align);
+
+private:
+    TableCellAlign alignment;
 };

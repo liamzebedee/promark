@@ -33,6 +33,11 @@ private:
     void paintLinkUnderline(const TextLayoutObject* textObject, DisplayList& displayList);
     bool isInsideLink(const LayoutObject* layoutObject);
 
+    // Table painting
+    void paintTable(const TableLayoutObject* tableObject, DisplayList& displayList);
+    void paintTableRow(const TableRowLayoutObject* rowObject, DisplayList& displayList);
+    void paintTableCell(const TableCellLayoutObject* cellObject, DisplayList& displayList);
+
     // Caret/selection painting
     void paintCaret(DisplayList& displayList, const CaretState& caret,
                     const char* text, int textLength, const LayoutObject* layoutRoot);

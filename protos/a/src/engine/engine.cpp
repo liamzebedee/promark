@@ -692,6 +692,44 @@ void Engine::insertChar(char c) {
     }
 }
 
+void Engine::insertText(const std::string& text) {
+    if (text.empty()) return;
+
+    saveUndoState();
+
+    if (hasSelection) {
+        // Replace selection
+        int start = std::min(selectionStart, selectionEnd);
+        int end = std::max(selectionStart, selectionEnd);
+        memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
+        inputLength -= (end - start);
+        cursorPos = start;
+        hasSelection = false;
+    }
+
+    int insertLen = static_cast<int>(text.length());
+    if (inputLength + insertLen < INPUT_BUFFER_SIZE - 1) {
+        memmove(inputBuffer + cursorPos + insertLen, inputBuffer + cursorPos, inputLength - cursorPos + 1);
+        memcpy(inputBuffer + cursorPos, text.c_str(), insertLen);
+        inputLength += insertLen;
+        cursorPos += insertLen;
+
+        // Update markdown content
+        if (textBuffer && markdownRenderer) {
+            std::string newText(inputBuffer, inputLength);
+            textBuffer->setText(newText);
+            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+        }
+        ensureCursorVisible();
+        dirty = true;
+
+        // Reset blink timer so cursor is visible after typing
+        lastBlinkTime = glfwGetTime();
+        caretVisible = true;
+        goalColumn = getColumnInLine(cursorPos);
+    }
+}
+
 void Engine::deleteChar() {
     saveUndoState();
 

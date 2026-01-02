@@ -58,6 +58,18 @@ void LayoutEngine::performLayout(LayoutObject* layoutRoot, const Size& available
         return;
     }
 
+    // Handle table layout specially - tables manage their own child layout
+    const MarkdownObject* sourceObj = layoutRoot->getSourceObject();
+    if (sourceObj) {
+        MarkdownObjectType type = sourceObj->getType();
+        if (type == MarkdownObjectType::Table ||
+            type == MarkdownObjectType::TableRow ||
+            type == MarkdownObjectType::TableCell) {
+            layoutRoot->layout(availableSpace);
+            return;
+        }
+    }
+
     // Perform layout based on flow type
     if (layoutRoot->getFlow() == LayoutFlow::Block) {
         layoutBlockFlow(layoutRoot, availableSpace);
@@ -85,12 +97,25 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
                 textLayout->setMonospace(true);
             } else {
                 textLayout->setFontFace(fontFace);
+                // Also provide mono font for inline code width calculations
+                if (monoFontFace) {
+                    textLayout->setMonoFontFace(monoFontFace);
+                }
             }
             return textLayout;
         }
 
         case MarkdownObjectType::Image:
             return std::make_unique<ImageLayoutObject>(object);
+
+        case MarkdownObjectType::Table:
+            return std::make_unique<TableLayoutObject>(object);
+
+        case MarkdownObjectType::TableRow:
+            return std::make_unique<TableRowLayoutObject>(object);
+
+        case MarkdownObjectType::TableCell:
+            return std::make_unique<TableCellLayoutObject>(object);
 
         case MarkdownObjectType::Bold:
         case MarkdownObjectType::Italic:

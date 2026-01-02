@@ -1,5 +1,6 @@
 #include "painter.h"
 #include "markdown_renderer.h"  // For CaretState
+#include "utf8.h"
 #include <cstring>
 #include <algorithm>
 
@@ -43,6 +44,12 @@ void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& d
         paintText(textObject, displayList);
     } else if (const ImageLayoutObject* imageObject = dynamic_cast<const ImageLayoutObject*>(layoutObject)) {
         paintImage(imageObject, displayList);
+    } else if (const TableLayoutObject* tableObject = dynamic_cast<const TableLayoutObject*>(layoutObject)) {
+        paintTable(tableObject, displayList);
+    } else if (const TableRowLayoutObject* rowObject = dynamic_cast<const TableRowLayoutObject*>(layoutObject)) {
+        paintTableRow(rowObject, displayList);
+    } else if (const TableCellLayoutObject* cellObject = dynamic_cast<const TableCellLayoutObject*>(layoutObject)) {
+        paintTableCell(cellObject, displayList);
     }
 
     paintBorder(layoutObject, displayList);
@@ -135,8 +142,8 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
                 }
             }
 
-            // Extract segment text
-            std::string segmentText = fullText.substr(charPos, segmentEnd - charPos);
+            // Extract segment text using character indices (not byte indices)
+            std::string segmentText = utf8::substr(fullText, charPos, segmentEnd - charPos);
 
             // Calculate x position for this segment
             float segmentX = lineX;
@@ -146,8 +153,15 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
 
             // Draw text segment with appropriate color and style
             Color segmentColor = inLink ? linkColor : defaultColor;
+            bool useMonospace = isMonospace || hasStyle(currentStyle, TextStyle::Code);
+
+            // Inline code gets a slightly different color
+            if (hasStyle(currentStyle, TextStyle::Code) && !inLink) {
+                segmentColor = Color(200, 50, 50, 255);  // Reddish for inline code
+            }
+
             Point textPos(segmentX, lineY);
-            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize, currentStyle, isMonospace);
+            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize, currentStyle, useMonospace);
             displayList.push_back(std::move(textOp));
 
             // Draw underline for links
@@ -173,6 +187,79 @@ void Painter::paintImage(const ImageLayoutObject* imageObject, DisplayList& disp
     const ImageObject* imgObj = static_cast<const ImageObject*>(imageObject->getSourceObject());
     auto imageOp = std::make_unique<DrawImageOp>(rect, imgObj->getSrc());
     displayList.push_back(std::move(imageOp));
+}
+
+void Painter::paintTable(const TableLayoutObject* tableObject, DisplayList& displayList) {
+    const Rect& rect = tableObject->getRect();
+    const std::vector<float>& columnWidths = tableObject->getColumnWidths();
+
+    Color borderColor(200, 200, 200, 255);  // Light gray borders
+    float borderWidth = 1.0f;
+
+    // Draw outer border
+    auto topBorder = std::make_unique<DrawLineOp>(
+        Point(rect.position.x, rect.position.y),
+        Point(rect.position.x + rect.size.width, rect.position.y),
+        borderWidth, borderColor);
+    displayList.push_back(std::move(topBorder));
+
+    auto bottomBorder = std::make_unique<DrawLineOp>(
+        Point(rect.position.x, rect.position.y + rect.size.height),
+        Point(rect.position.x + rect.size.width, rect.position.y + rect.size.height),
+        borderWidth, borderColor);
+    displayList.push_back(std::move(bottomBorder));
+
+    auto leftBorder = std::make_unique<DrawLineOp>(
+        Point(rect.position.x, rect.position.y),
+        Point(rect.position.x, rect.position.y + rect.size.height),
+        borderWidth, borderColor);
+    displayList.push_back(std::move(leftBorder));
+
+    auto rightBorder = std::make_unique<DrawLineOp>(
+        Point(rect.position.x + rect.size.width, rect.position.y),
+        Point(rect.position.x + rect.size.width, rect.position.y + rect.size.height),
+        borderWidth, borderColor);
+    displayList.push_back(std::move(rightBorder));
+
+    // Draw vertical column separators
+    if (columnWidths.size() > 1) {
+        float x = rect.position.x + borderWidth;
+        for (size_t i = 0; i < columnWidths.size() - 1; i++) {
+            x += columnWidths[i];
+            auto colBorder = std::make_unique<DrawLineOp>(
+                Point(x, rect.position.y),
+                Point(x, rect.position.y + rect.size.height),
+                borderWidth, borderColor);
+            displayList.push_back(std::move(colBorder));
+            x += borderWidth;
+        }
+    }
+}
+
+void Painter::paintTableRow(const TableRowLayoutObject* rowObject, DisplayList& displayList) {
+    const Rect& rect = rowObject->getRect();
+
+    // Draw header background
+    if (rowObject->isHeader()) {
+        Color headerBgColor(245, 245, 245, 255);  // Light gray background
+        auto bgRect = std::make_unique<DrawRectOp>(rect, headerBgColor);
+        displayList.push_back(std::move(bgRect));
+    }
+
+    // Draw bottom border (row separator)
+    Color borderColor(200, 200, 200, 255);
+    auto bottomBorder = std::make_unique<DrawLineOp>(
+        Point(rect.position.x, rect.position.y + rect.size.height),
+        Point(rect.position.x + rect.size.width, rect.position.y + rect.size.height),
+        1.0f, borderColor);
+    displayList.push_back(std::move(bottomBorder));
+}
+
+void Painter::paintTableCell(const TableCellLayoutObject* cellObject, DisplayList& displayList) {
+    // Cell content is painted via children (text nodes)
+    // This function could be used for cell-specific styling if needed
+    (void)cellObject;
+    (void)displayList;
 }
 
 void Painter::paintBackground(const LayoutObject* layoutObject, DisplayList& displayList) {

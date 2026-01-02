@@ -34,6 +34,9 @@ public:
     void markClean() { dirty = false; }
     bool shouldClose() const { return wantsToClose; }
 
+    // Text insertion (for drag-and-drop, etc.)
+    void insertText(const std::string& text);
+
 private:
     bool wantsToClose;
     bool leftMouseHeld;

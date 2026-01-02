@@ -111,7 +111,7 @@ void InlineLayoutObject::layout(const Size& availableSpace) {
 }
 
 TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
-    : LayoutObject(sourceObject, LayoutFlow::Inline), fontFace(nullptr), availableWidth(0) {
+    : LayoutObject(sourceObject, LayoutFlow::Inline), fontFace(nullptr), monoFontFace(nullptr), availableWidth(0) {
 }
 
 Size TextLayoutObject::computeIntrinsicSize() const {
@@ -182,6 +182,10 @@ void TextLayoutObject::setFontFace(FT_Face face) {
     fontFace = face;
 }
 
+void TextLayoutObject::setMonoFontFace(FT_Face face) {
+    monoFontFace = face;
+}
+
 int TextLayoutObject::getDOMLength() const {
     // Return code point count, not byte count
     int len = static_cast<int>(utf8::length(sourceObject->getText()));
@@ -212,29 +216,70 @@ void TextLayoutObject::shapeText() {
     float fontSize = getFontSize();
     float x = 0.0f;
 
+    // Get style ranges to determine which characters use mono font (inline code)
+    const auto& styleRanges = getStyleRanges();
+
+    // Helper to check if a character index is styled as Code
+    auto isCodeStyle = [&styleRanges](int charIdx) -> bool {
+        for (const auto& sr : styleRanges) {
+            if (charIdx >= sr.startChar && charIdx < sr.endChar) {
+                if (hasStyle(sr.style, TextStyle::Code)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+
+    // Set up both fonts if available
+    if (fontFace) {
+        FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
+    }
+    if (monoFontFace) {
+        FT_Set_Pixel_Sizes(monoFontFace, 0, static_cast<FT_UInt>(fontSize));
+    }
+
     if (fontFace) {
         // Use FreeType for accurate glyph metrics with UTF-8 decoding
-        FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
-
-        // Decode UTF-8 and get advance for each code point
         size_t pos = 0;
+        int charIdx = 0;
         while (pos < text.length()) {
             uint32_t codepoint = utf8::decode(text, pos);
-            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(codepoint));
-            if (FT_Load_Glyph(fontFace, glyphIndex, FT_LOAD_DEFAULT) == 0) {
-                x += fontFace->glyph->advance.x / 64.0f;  // advance in 1/64 pixels
+
+            // Newline and other control characters have zero width
+            if (codepoint == '\n' || codepoint == '\r' || codepoint == '\t') {
+                charXOffsets.push_back(x);
+                charIdx++;
+                continue;
+            }
+
+            // Choose font based on whether this character is inline code
+            FT_Face faceToUse = fontFace;
+            if (monoFontFace && isCodeStyle(charIdx)) {
+                faceToUse = monoFontFace;
+            }
+
+            FT_UInt glyphIndex = FT_Get_Char_Index(faceToUse, static_cast<FT_ULong>(codepoint));
+            if (FT_Load_Glyph(faceToUse, glyphIndex, FT_LOAD_DEFAULT) == 0) {
+                x += faceToUse->glyph->advance.x / 64.0f;  // advance in 1/64 pixels
             } else {
                 // Fallback for missing glyphs
                 x += fontSize * 0.6f;
             }
             charXOffsets.push_back(x);
+            charIdx++;
         }
     } else {
         // Fallback: monospace approximation (still need to decode UTF-8)
         float charWidth = fontSize * 0.6f;
         size_t pos = 0;
         while (pos < text.length()) {
-            utf8::decode(text, pos);  // Advance pos by one code point
+            uint32_t codepoint = utf8::decode(text, pos);
+            // Newline and control characters have zero width
+            if (codepoint == '\n' || codepoint == '\r' || codepoint == '\t') {
+                charXOffsets.push_back(x);
+                continue;
+            }
             x += charWidth;
             charXOffsets.push_back(x);
         }
@@ -487,4 +532,141 @@ void ImageLayoutObject::computeImageSize() const {
         }
         jpeg_destroy_decompress(&cinfo);
     }
+}
+
+// Table Layout Objects
+
+TableLayoutObject::TableLayoutObject(const MarkdownObject* sourceObject)
+    : LayoutObject(sourceObject, LayoutFlow::Block) {
+}
+
+void TableLayoutObject::computeColumnWidths(float availableWidth) {
+    const TableObject* tableObj = static_cast<const TableObject*>(sourceObject);
+    int columnCount = tableObj->getColumnCount();
+    if (columnCount == 0) return;
+
+    // Simple equal-width columns
+    float borderWidth = 1.0f;
+    float totalBorders = (columnCount + 1) * borderWidth;
+    float usableWidth = availableWidth - totalBorders;
+    float columnWidth = usableWidth / columnCount;
+
+    columnWidths.clear();
+    for (int i = 0; i < columnCount; i++) {
+        columnWidths.push_back(columnWidth);
+    }
+}
+
+void TableLayoutObject::layout(const Size& availableSpace) {
+    computeColumnWidths(availableSpace.width);
+
+    float y = 0;
+    float borderWidth = 1.0f;
+    y += borderWidth;  // Top border
+
+    for (auto& child : children) {
+        if (TableRowLayoutObject* rowLayout = dynamic_cast<TableRowLayoutObject*>(child.get())) {
+            // Pass column widths to row via available space
+            // The row will position cells according to column widths
+            child->layout(availableSpace);
+
+            // Position row
+            Rect rowRect = child->getRect();
+            rowRect.position.x = 0;
+            rowRect.position.y = y;
+            rowRect.size.width = availableSpace.width;
+            child->setRect(rowRect);
+
+            y += rowRect.size.height + borderWidth;
+        }
+    }
+
+    rect.size.width = availableSpace.width;
+    rect.size.height = y;
+}
+
+TableRowLayoutObject::TableRowLayoutObject(const MarkdownObject* sourceObject)
+    : LayoutObject(sourceObject, LayoutFlow::Block) {
+}
+
+bool TableRowLayoutObject::isHeader() const {
+    const TableRowObject* rowObj = static_cast<const TableRowObject*>(sourceObject);
+    return rowObj->isHeader();
+}
+
+void TableRowLayoutObject::layout(const Size& availableSpace) {
+    // Get column widths from parent table
+    TableLayoutObject* tableLayout = dynamic_cast<TableLayoutObject*>(parent);
+    if (!tableLayout) return;
+
+    const std::vector<float>& columnWidths = tableLayout->getColumnWidths();
+    float borderWidth = 1.0f;
+    float cellPadding = 8.0f;
+
+    float x = borderWidth;
+    float maxHeight = 0;
+
+    size_t colIndex = 0;
+    for (auto& child : children) {
+        if (colIndex >= columnWidths.size()) break;
+
+        float cellWidth = columnWidths[colIndex];
+
+        // Layout cell content
+        Size cellAvailable(cellWidth - cellPadding * 2, availableSpace.height);
+        child->layout(cellAvailable);
+
+        // Position cell
+        Rect cellRect = child->getRect();
+        cellRect.position.x = x + cellPadding;
+        cellRect.position.y = cellPadding;
+        cellRect.size.width = cellWidth - cellPadding * 2;
+        child->setRect(cellRect);
+
+        maxHeight = std::max(maxHeight, cellRect.size.height + cellPadding * 2);
+
+        x += cellWidth + borderWidth;
+        colIndex++;
+    }
+
+    rect.size.width = availableSpace.width;
+    rect.size.height = maxHeight;
+}
+
+TableCellLayoutObject::TableCellLayoutObject(const MarkdownObject* sourceObject)
+    : LayoutObject(sourceObject, LayoutFlow::Block) {
+}
+
+TableCellAlign TableCellLayoutObject::getAlignment() const {
+    const TableCellObject* cellObj = static_cast<const TableCellObject*>(sourceObject);
+    return cellObj->getAlignment();
+}
+
+void TableCellLayoutObject::layout(const Size& availableSpace) {
+    float y = 0;
+    float contentWidth = 0;
+
+    // Layout children (text content)
+    for (auto& child : children) {
+        child->layout(availableSpace);
+        Rect childRect = child->getRect();
+        childRect.position.y = y;
+
+        // Handle alignment
+        TableCellAlign align = getAlignment();
+        if (align == TableCellAlign::Center) {
+            childRect.position.x = (availableSpace.width - childRect.size.width) / 2;
+        } else if (align == TableCellAlign::Right) {
+            childRect.position.x = availableSpace.width - childRect.size.width;
+        } else {
+            childRect.position.x = 0;
+        }
+
+        child->setRect(childRect);
+        y += childRect.size.height;
+        contentWidth = std::max(contentWidth, childRect.size.width);
+    }
+
+    rect.size.width = availableSpace.width;
+    rect.size.height = y;
 }

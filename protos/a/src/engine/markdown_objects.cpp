@@ -105,3 +105,39 @@ const std::string& FrontmatterObject::getContent() const {
 void FrontmatterObject::setContent(const std::string& content) {
     this->content = content;
 }
+
+TableObject::TableObject()
+    : MarkdownObject(MarkdownObjectType::Table) {
+}
+
+void TableObject::setColumnAlignments(const std::vector<TableCellAlign>& alignments) {
+    columnAlignments = alignments;
+}
+
+const std::vector<TableCellAlign>& TableObject::getColumnAlignments() const {
+    return columnAlignments;
+}
+
+int TableObject::getColumnCount() const {
+    return static_cast<int>(columnAlignments.size());
+}
+
+TableRowObject::TableRowObject(bool isHeader)
+    : MarkdownObject(MarkdownObjectType::TableRow), header(isHeader) {
+}
+
+bool TableRowObject::isHeader() const {
+    return header;
+}
+
+TableCellObject::TableCellObject(TableCellAlign align)
+    : MarkdownObject(MarkdownObjectType::TableCell), alignment(align) {
+}
+
+TableCellAlign TableCellObject::getAlignment() const {
+    return alignment;
+}
+
+void TableCellObject::setAlignment(TableCellAlign align) {
+    alignment = align;
+}

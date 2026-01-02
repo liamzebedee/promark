@@ -105,6 +105,7 @@ public:
 
     // FreeType face for glyph metrics
     void setFontFace(FT_Face face);
+    void setMonoFontFace(FT_Face face);
     void setMonospace(bool mono) { isMonospace = mono; }
     bool getMonospace() const { return isMonospace; }
 
@@ -119,6 +120,7 @@ private:
     std::vector<float> charXOffsets;  // Cumulative x offset for each character
     std::vector<LineInfo> lines;
     FT_Face fontFace;
+    FT_Face monoFontFace;  // For inline code
     float availableWidth;
     bool isMonospace = false;
     void shapeText();
@@ -139,4 +141,32 @@ private:
     mutable Size intrinsicSize;
     mutable bool sizeComputed;
     void computeImageSize() const;
+};
+
+class TableLayoutObject : public LayoutObject {
+public:
+    TableLayoutObject(const MarkdownObject* sourceObject);
+    void layout(const Size& availableSpace) override;
+
+    const std::vector<float>& getColumnWidths() const { return columnWidths; }
+
+private:
+    std::vector<float> columnWidths;
+    void computeColumnWidths(float availableWidth);
+};
+
+class TableRowLayoutObject : public LayoutObject {
+public:
+    TableRowLayoutObject(const MarkdownObject* sourceObject);
+    void layout(const Size& availableSpace) override;
+
+    bool isHeader() const;
+};
+
+class TableCellLayoutObject : public LayoutObject {
+public:
+    TableCellLayoutObject(const MarkdownObject* sourceObject);
+    void layout(const Size& availableSpace) override;
+
+    TableCellAlign getAlignment() const;
 };

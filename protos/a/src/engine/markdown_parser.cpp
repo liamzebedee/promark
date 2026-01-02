@@ -116,6 +116,39 @@ std::string MarkdownParser::parseInlineElements(const std::string& line, int lin
             }
         }
 
+        // Check for <br> tag (HTML line break)
+        if (line[pos] == '<' && pos + 3 < line.length()) {
+            // Check for <br>, <br/>, <br />
+            std::string remaining = line.substr(pos);
+            if (remaining.substr(0, 4) == "<br>" ||
+                remaining.substr(0, 5) == "<br/>" ||
+                remaining.substr(0, 6) == "<br />") {
+                displayText += '\n';
+                if (remaining.substr(0, 6) == "<br />") {
+                    pos += 6;
+                } else if (remaining.substr(0, 5) == "<br/>") {
+                    pos += 5;
+                } else {
+                    pos += 4;
+                }
+                continue;
+            }
+        }
+
+        // Check for inline code with backticks
+        if (line[pos] == '`') {
+            size_t endPos = line.find('`', pos + 1);
+            if (endPos != std::string::npos) {
+                std::string code = line.substr(pos + 1, endPos - pos - 1);
+                int codeStart = static_cast<int>(displayText.length());
+                displayText += code;
+                int codeEnd = static_cast<int>(displayText.length());
+                parent->addStyleRange(codeStart, codeEnd, TextStyle::Code);
+                pos = endPos + 1;
+                continue;
+            }
+        }
+
         displayText += line[pos];
         pos++;
     }
@@ -427,6 +460,128 @@ continue_parsing:
 
             paragraph->addChild(std::move(textNode));
             document->addChild(std::move(paragraph));
+        } else if (line.length() >= 1 && line[0] == '|') {
+            // Possible table - need to check for separator line
+            // Look ahead to see if the next line is a separator (contains |---|)
+            size_t nextNextLineStart = nextLineStart;
+            size_t nextNextLineEnd = nextNextLineStart;
+            while (nextNextLineEnd < textLen && text[nextNextLineEnd] != '\n') {
+                nextNextLineEnd++;
+            }
+            std::string nextLine = text.substr(nextNextLineStart, nextNextLineEnd - nextNextLineStart);
+
+            // Check if next line is a valid separator line
+            bool isSeparator = false;
+            std::vector<TableCellAlign> alignments;
+            if (nextLine.length() >= 3 && nextLine[0] == '|') {
+                isSeparator = true;
+                // Parse separator line for alignments
+                size_t sepPos = 1;
+                while (sepPos < nextLine.length()) {
+                    // Skip whitespace
+                    while (sepPos < nextLine.length() && (nextLine[sepPos] == ' ' || nextLine[sepPos] == '\t')) {
+                        sepPos++;
+                    }
+                    if (sepPos >= nextLine.length()) break;
+
+                    // Check for alignment indicators
+                    bool leftColon = (nextLine[sepPos] == ':');
+                    if (leftColon) sepPos++;
+
+                    // Skip dashes
+                    size_t dashStart = sepPos;
+                    while (sepPos < nextLine.length() && nextLine[sepPos] == '-') {
+                        sepPos++;
+                    }
+
+                    if (sepPos == dashStart) {
+                        // No dashes found - not a valid separator
+                        if (nextLine[sepPos] == '|') {
+                            sepPos++;
+                            continue;
+                        }
+                        isSeparator = false;
+                        break;
+                    }
+
+                    bool rightColon = (sepPos < nextLine.length() && nextLine[sepPos] == ':');
+                    if (rightColon) sepPos++;
+
+                    // Determine alignment
+                    TableCellAlign align = TableCellAlign::Left;
+                    if (leftColon && rightColon) {
+                        align = TableCellAlign::Center;
+                    } else if (rightColon) {
+                        align = TableCellAlign::Right;
+                    }
+                    alignments.push_back(align);
+
+                    // Skip whitespace
+                    while (sepPos < nextLine.length() && (nextLine[sepPos] == ' ' || nextLine[sepPos] == '\t')) {
+                        sepPos++;
+                    }
+
+                    // Expect pipe or end
+                    if (sepPos < nextLine.length() && nextLine[sepPos] == '|') {
+                        sepPos++;
+                    }
+                }
+            }
+
+            if (isSeparator && !alignments.empty()) {
+                // This is a table! Parse it
+                auto table = std::make_unique<TableObject>();
+                table->setColumnAlignments(alignments);
+                size_t tableStart = lineStart;
+
+                // Parse header row (current line)
+                auto headerRow = std::make_unique<TableRowObject>(true);
+                parseTableRow(line, alignments, headerRow.get());
+                table->addChild(std::move(headerRow));
+
+                // Skip separator line
+                size_t tablePos = (nextNextLineEnd < textLen) ? nextNextLineEnd + 1 : nextNextLineEnd;
+
+                // Parse body rows
+                while (tablePos < textLen) {
+                    size_t rowLineStart = tablePos;
+                    size_t rowLineEnd = tablePos;
+                    while (rowLineEnd < textLen && text[rowLineEnd] != '\n') {
+                        rowLineEnd++;
+                    }
+                    std::string rowLine = text.substr(rowLineStart, rowLineEnd - rowLineStart);
+
+                    // Check if this is still a table row
+                    if (rowLine.empty() || rowLine[0] != '|') {
+                        break;
+                    }
+
+                    auto bodyRow = std::make_unique<TableRowObject>(false);
+                    parseTableRow(rowLine, alignments, bodyRow.get());
+                    table->addChild(std::move(bodyRow));
+
+                    tablePos = (rowLineEnd < textLen) ? rowLineEnd + 1 : rowLineEnd;
+                }
+
+                table->setRawRange(static_cast<int>(tableStart), static_cast<int>(tablePos));
+                document->addChild(std::move(table));
+                pos = tablePos;
+                continue;
+            }
+
+            // Not a valid table, treat as paragraph
+            auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
+            paragraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+
+            std::string displayText = parseInlineElements(line, static_cast<int>(lineStart), paragraph.get());
+
+            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+            textNode->setText(displayText);
+            textNode->setRawRange(static_cast<int>(lineStart), static_cast<int>(lineEnd));
+            textNode->setTextOffset(0);
+            paragraph->addChild(std::move(textNode));
+
+            document->addChild(std::move(paragraph));
         } else {
             // Regular paragraph - parse inline elements (links)
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
@@ -477,4 +632,68 @@ bool MarkdownParser::isCodeBlock(const std::string& text, size_t position) {
 bool MarkdownParser::isList(const std::string& text, size_t position) {
     // TODO: Implement list detection
     return false;
+}
+
+void MarkdownParser::parseTableRow(const std::string& line, const std::vector<TableCellAlign>& alignments, MarkdownObject* row) {
+    std::vector<std::string> cells;
+    size_t pos = 0;
+
+    // Skip leading pipe
+    if (pos < line.length() && line[pos] == '|') {
+        pos++;
+    }
+
+    // Parse cells
+    std::string currentCell;
+    while (pos < line.length()) {
+        if (line[pos] == '|') {
+            // Trim whitespace from cell content
+            size_t start = currentCell.find_first_not_of(" \t");
+            size_t end = currentCell.find_last_not_of(" \t");
+            if (start != std::string::npos) {
+                cells.push_back(currentCell.substr(start, end - start + 1));
+            } else {
+                cells.push_back("");
+            }
+            currentCell.clear();
+        } else {
+            currentCell += line[pos];
+        }
+        pos++;
+    }
+
+    // Add last cell if not empty (trailing content after last |)
+    if (!currentCell.empty()) {
+        size_t start = currentCell.find_first_not_of(" \t");
+        size_t end = currentCell.find_last_not_of(" \t");
+        if (start != std::string::npos) {
+            cells.push_back(currentCell.substr(start, end - start + 1));
+        }
+    }
+
+    // Create cell objects
+    for (size_t i = 0; i < cells.size(); i++) {
+        TableCellAlign align = (i < alignments.size()) ? alignments[i] : TableCellAlign::Left;
+        auto cell = std::make_unique<TableCellObject>(align);
+
+        // Parse inline elements in cell content
+        std::string displayText = parseInlineElements(cells[i], 0, cell.get());
+
+        auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+        textNode->setText(displayText);
+        cell->addChild(std::move(textNode));
+
+        row->addChild(std::move(cell));
+    }
+
+    // Pad with empty cells if needed
+    while (row->getChildren().size() < alignments.size()) {
+        size_t i = row->getChildren().size();
+        TableCellAlign align = alignments[i];
+        auto cell = std::make_unique<TableCellObject>(align);
+        auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+        textNode->setText("");
+        cell->addChild(std::move(textNode));
+        row->addChild(std::move(cell));
+    }
 }

@@ -95,4 +95,13 @@ inline size_t byteOffset(const std::string& str, size_t charIndex) {
     return pos;
 }
 
+// Extract substring using character (code point) indices
+inline std::string substr(const std::string& str, size_t charStart, size_t charCount) {
+    size_t byteStart = byteOffset(str, charStart);
+    size_t byteEnd = byteOffset(str, charStart + charCount);
+    if (byteStart >= str.length()) return "";
+    if (byteEnd > str.length()) byteEnd = str.length();
+    return str.substr(byteStart, byteEnd - byteStart);
+}
+
 }  // namespace utf8
