@@ -59,13 +59,14 @@ void LayoutEngine::performLayout(LayoutObject* layoutRoot, const Size& available
         return;
     }
 
-    // Handle table layout specially - tables manage their own child layout
+    // Handle table and list item layout specially - they manage their own child layout
     const MarkdownObject* sourceObj = layoutRoot->getSourceObject();
     if (sourceObj) {
         MarkdownObjectType type = sourceObj->getType();
         if (type == MarkdownObjectType::Table ||
             type == MarkdownObjectType::TableRow ||
-            type == MarkdownObjectType::TableCell) {
+            type == MarkdownObjectType::TableCell ||
+            type == MarkdownObjectType::ListItem) {
             layoutRoot->layout(availableSpace);
             return;
         }
@@ -88,8 +89,10 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
         case MarkdownObjectType::CodeBlock:
         case MarkdownObjectType::Frontmatter:
         case MarkdownObjectType::List:
-        case MarkdownObjectType::ListItem:
             return std::make_unique<BlockLayoutObject>(object);
+
+        case MarkdownObjectType::ListItem:
+            return std::make_unique<ListItemLayoutObject>(object);
 
         case MarkdownObjectType::Text: {
             auto textLayout = std::make_unique<TextLayoutObject>(object);
@@ -187,7 +190,15 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
 
         // Set child position and propagate to grandchildren
         child->setRect(Rect(childX, childY, childRect.size.width, childRect.size.height));
-        propagatePositionToChildren(child.get(), childX, childY);
+
+        // For ListItem children, only propagate at document level to avoid double-propagation
+        // (ListItem::layout sets children to relative positions, and we only want to convert
+        // to absolute once, not both at List level AND Document level)
+        MarkdownObjectType childType = childSource->getType();
+        bool skipPropagate = (childType == MarkdownObjectType::ListItem && !isRoot);
+        if (!skipPropagate) {
+            propagatePositionToChildren(child.get(), childX, childY);
+        }
 
         // Add spacing after this element (block spacing between elements)
         currentY += childRect.size.height;

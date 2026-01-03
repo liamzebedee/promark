@@ -1,4 +1,5 @@
 #include "batch_renderer.h"
+#include "shaders_embedded.h"
 #include "utf8.h"
 #ifdef __EMSCRIPTEN__
 #include <GLES2/gl2.h>
@@ -7,19 +8,6 @@
 #endif
 #include <cstring>
 #include <iostream>
-#include <fstream>
-#include <sstream>
-
-static std::string loadShaderFile(const char* path) {
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        std::cerr << "Failed to load shader: " << path << std::endl;
-        return "";
-    }
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    return buffer.str();
-}
 
 BatchRenderer::BatchRenderer()
     : textProg(0), solidProg(0), imageProg(0), vbo(0), viewportW(800), viewportH(600),
@@ -35,21 +23,19 @@ BatchRenderer::~BatchRenderer() {
 }
 
 bool BatchRenderer::init() {
-    // Load shader sources from files
+    // Use embedded shader sources with platform-specific preamble
 #ifdef __EMSCRIPTEN__
-    const char* shaderPath = "/shaders/";
     const char* vertPreamble = "";
     const char* fragPreamble = "precision mediump float;\n";
 #else
-    const char* shaderPath = "src/engine/shaders/";
     const char* vertPreamble = "#version 120\n";
     const char* fragPreamble = "#version 120\n";
 #endif
 
-    std::string textVS = vertPreamble + loadShaderFile((std::string(shaderPath) + "text.vert").c_str());
-    std::string textFS = fragPreamble + loadShaderFile((std::string(shaderPath) + "text.frag").c_str());
-    std::string solidVS = vertPreamble + loadShaderFile((std::string(shaderPath) + "solid.vert").c_str());
-    std::string solidFS = fragPreamble + loadShaderFile((std::string(shaderPath) + "solid.frag").c_str());
+    std::string textVS = std::string(vertPreamble) + Shaders::TEXT_VERT;
+    std::string textFS = std::string(fragPreamble) + Shaders::TEXT_FRAG;
+    std::string solidVS = std::string(vertPreamble) + Shaders::SOLID_VERT;
+    std::string solidFS = std::string(fragPreamble) + Shaders::SOLID_FRAG;
 
     const char* textVSrc = textVS.c_str();
     const char* textFSrc = textFS.c_str();
@@ -95,7 +81,7 @@ bool BatchRenderer::init() {
     glDeleteShader(sfs);
 
     // Image shader (reuses text.vert, different fragment shader)
-    std::string imageFS = fragPreamble + loadShaderFile((std::string(shaderPath) + "image.frag").c_str());
+    std::string imageFS = std::string(fragPreamble) + Shaders::IMAGE_FRAG;
     const char* imageFSrc = imageFS.c_str();
 
     unsigned int ivs = glCreateShader(GL_VERTEX_SHADER);

@@ -38,6 +38,9 @@ private:
     void paintTableRow(const TableRowLayoutObject* rowObject, DisplayList& displayList);
     void paintTableCell(const TableCellLayoutObject* cellObject, DisplayList& displayList);
 
+    // List painting
+    void paintListItem(const ListItemLayoutObject* listItemObject, DisplayList& displayList);
+
     // Caret/selection painting
     void paintCaret(DisplayList& displayList, const CaretState& caret,
                     const char* text, int textLength, const LayoutObject* layoutRoot);

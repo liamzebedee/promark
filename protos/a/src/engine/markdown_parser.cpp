@@ -460,6 +460,76 @@ continue_parsing:
 
             paragraph->addChild(std::move(textNode));
             document->addChild(std::move(paragraph));
+        } else if (isListItem(line)) {
+            // Parse list - collect all consecutive list items
+            auto list = std::make_unique<ListObject>(isOrderedListItem(line));
+            size_t listStart = lineStart;
+            size_t listEnd = lineStart;
+
+            size_t scanPos = pos;
+            while (scanPos < textLen) {
+                // Find the line at scanPos
+                size_t scanLineStart = scanPos;
+                size_t scanLineEnd = scanPos;
+                while (scanLineEnd < textLen && text[scanLineEnd] != '\n') {
+                    scanLineEnd++;
+                }
+                std::string scanLine = text.substr(scanLineStart, scanLineEnd - scanLineStart);
+
+                // Check if this line is a list item or continuation
+                if (scanLine.empty()) {
+                    // Empty line ends list
+                    break;
+                }
+
+                // Calculate indentation
+                int indent = 0;
+                size_t contentStart = 0;
+                while (contentStart < scanLine.length() && (scanLine[contentStart] == ' ' || scanLine[contentStart] == '\t')) {
+                    indent += (scanLine[contentStart] == '\t') ? 4 : 1;
+                    contentStart++;
+                }
+
+                std::string trimmedLine = scanLine.substr(contentStart);
+
+                if (isListItem(trimmedLine)) {
+                    // Parse list item marker
+                    ListMarkerType markerType;
+                    std::string markerText;
+                    size_t textStart = parseListMarker(trimmedLine, markerType, markerText);
+
+                    std::string itemText = trimmedLine.substr(textStart);
+
+                    auto listItem = std::make_unique<ListItemObject>();
+                    listItem->setMarkerType(markerType);
+                    listItem->setMarkerText(markerText);
+                    listItem->setIndentLevel(indent / 2);  // 2 spaces per indent level
+                    listItem->setRawRange(static_cast<int>(scanLineStart), static_cast<int>(scanLineEnd + 1));
+
+                    // Parse inline elements in list item text
+                    std::string displayText = parseInlineElements(itemText, static_cast<int>(scanLineStart + contentStart + textStart), listItem.get());
+
+                    auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+                    textNode->setText(displayText);
+                    textNode->setRawRange(static_cast<int>(scanLineStart + contentStart + textStart), static_cast<int>(scanLineEnd));
+                    textNode->setTextOffset(0);
+                    listItem->addChild(std::move(textNode));
+
+                    list->addChild(std::move(listItem));
+                    listEnd = scanLineEnd;
+
+                    scanPos = (scanLineEnd < textLen) ? scanLineEnd + 1 : scanLineEnd;
+                } else {
+                    // Not a list item, stop
+                    break;
+                }
+            }
+
+            size_t listNextStart = (listEnd < textLen) ? listEnd + 1 : listEnd;
+            list->setRawRange(static_cast<int>(listStart), static_cast<int>(listNextStart));
+            document->addChild(std::move(list));
+            pos = listNextStart;
+            continue;
         } else if (line.length() >= 1 && line[0] == '|') {
             // Possible table - need to check for separator line
             // Look ahead to see if the next line is a separator (contains |---|)
@@ -632,6 +702,108 @@ bool MarkdownParser::isCodeBlock(const std::string& text, size_t position) {
 bool MarkdownParser::isList(const std::string& text, size_t position) {
     // TODO: Implement list detection
     return false;
+}
+
+bool MarkdownParser::isListItem(const std::string& line) {
+    if (line.empty()) return false;
+
+    // Skip leading whitespace
+    size_t pos = 0;
+    while (pos < line.length() && (line[pos] == ' ' || line[pos] == '\t')) {
+        pos++;
+    }
+    if (pos >= line.length()) return false;
+
+    // Check for bullet markers: - or *
+    if ((line[pos] == '-' || line[pos] == '*') && pos + 1 < line.length() && line[pos + 1] == ' ') {
+        return true;
+    }
+
+    // Check for ordered list: number followed by . or )
+    if (line[pos] >= '0' && line[pos] <= '9') {
+        size_t numEnd = pos;
+        while (numEnd < line.length() && line[numEnd] >= '0' && line[numEnd] <= '9') {
+            numEnd++;
+        }
+        if (numEnd < line.length() && (line[numEnd] == '.' || line[numEnd] == ')')) {
+            if (numEnd + 1 < line.length() && line[numEnd + 1] == ' ') {
+                return true;
+            }
+        }
+    }
+
+    // Check for letter list: a. b. c. or A. B. C.
+    if ((line[pos] >= 'a' && line[pos] <= 'z') || (line[pos] >= 'A' && line[pos] <= 'Z')) {
+        if (pos + 1 < line.length() && (line[pos + 1] == '.' || line[pos + 1] == ')')) {
+            if (pos + 2 < line.length() && line[pos + 2] == ' ') {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool MarkdownParser::isOrderedListItem(const std::string& line) {
+    if (line.empty()) return false;
+
+    // Skip leading whitespace
+    size_t pos = 0;
+    while (pos < line.length() && (line[pos] == ' ' || line[pos] == '\t')) {
+        pos++;
+    }
+    if (pos >= line.length()) return false;
+
+    // Check for ordered list: number followed by . or )
+    if (line[pos] >= '0' && line[pos] <= '9') {
+        return true;
+    }
+
+    // Check for letter list: a. b. c.
+    if ((line[pos] >= 'a' && line[pos] <= 'z') || (line[pos] >= 'A' && line[pos] <= 'Z')) {
+        if (pos + 1 < line.length() && (line[pos + 1] == '.' || line[pos + 1] == ')')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+size_t MarkdownParser::parseListMarker(const std::string& line, ListMarkerType& type, std::string& marker) {
+    size_t pos = 0;
+
+    // Check for bullet markers: - or *
+    if ((line[pos] == '-' || line[pos] == '*') && pos + 1 < line.length() && line[pos + 1] == ' ') {
+        type = ListMarkerType::Bullet;
+        marker = std::string(1, line[pos]);
+        return 2;  // Skip marker and space
+    }
+
+    // Check for ordered list: number followed by . or )
+    if (line[pos] >= '0' && line[pos] <= '9') {
+        size_t numEnd = pos;
+        while (numEnd < line.length() && line[numEnd] >= '0' && line[numEnd] <= '9') {
+            numEnd++;
+        }
+        if (numEnd < line.length() && (line[numEnd] == '.' || line[numEnd] == ')')) {
+            type = ListMarkerType::Number;
+            marker = line.substr(pos, numEnd - pos + 1);  // e.g., "1."
+            return numEnd + 2;  // Skip number, delimiter, and space
+        }
+    }
+
+    // Check for letter list: a. b. c.
+    if ((line[pos] >= 'a' && line[pos] <= 'z') || (line[pos] >= 'A' && line[pos] <= 'Z')) {
+        if (pos + 1 < line.length() && (line[pos + 1] == '.' || line[pos + 1] == ')')) {
+            type = ListMarkerType::Letter;
+            marker = line.substr(pos, 2);  // e.g., "a."
+            return 3;  // Skip letter, delimiter, and space
+        }
+    }
+
+    type = ListMarkerType::Bullet;
+    marker = "-";
+    return 0;
 }
 
 void MarkdownParser::parseTableRow(const std::string& line, const std::vector<TableCellAlign>& alignments, MarkdownObject* row) {

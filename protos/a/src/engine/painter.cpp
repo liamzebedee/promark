@@ -1,5 +1,6 @@
 #include "painter.h"
 #include "markdown_renderer.h"  // For CaretState
+#include "typography.h"
 #include "utf8.h"
 #include <cstring>
 #include <algorithm>
@@ -50,6 +51,8 @@ void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& d
         paintTableRow(rowObject, displayList);
     } else if (const TableCellLayoutObject* cellObject = dynamic_cast<const TableCellLayoutObject*>(layoutObject)) {
         paintTableCell(cellObject, displayList);
+    } else if (const ListItemLayoutObject* listItemObject = dynamic_cast<const ListItemLayoutObject*>(layoutObject)) {
+        paintListItem(listItemObject, displayList);
     }
 
     paintBorder(layoutObject, displayList);
@@ -84,25 +87,27 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
         return;
     }
 
-    // Helper lambda to get style at a character position
-    auto getStyleAt = [&styleRanges](int pos) -> TextStyle {
-        for (const auto& sr : styleRanges) {
-            if (pos >= sr.startChar && pos < sr.endChar) {
-                return sr.style;
-            }
-        }
-        return TextStyle::Normal;
-    };
+    // Pre-compute style and link info for O(1) lookup per character
+    int textLen = textObject->getCharCount();
+    if (textLen == 0) textLen = static_cast<int>(utf8::length(fullText));
 
-    // Helper lambda to check if position is in a link
-    auto getLinkAt = [&linkRanges](int pos) -> const InlineLinkRange* {
-        for (const auto& lr : linkRanges) {
-            if (pos >= lr.startChar && pos < lr.endChar) {
-                return &lr;
-            }
+    std::vector<TextStyle> charStyles(textLen, TextStyle::Normal);
+    std::vector<int> charLinkIdx(textLen, -1);  // -1 = no link, otherwise index into linkRanges
+
+    // Fill in styles (O(m) where m = number of style ranges)
+    for (const auto& sr : styleRanges) {
+        for (int i = sr.startChar; i < sr.endChar && i < textLen; i++) {
+            if (i >= 0) charStyles[i] = sr.style;
         }
-        return nullptr;
-    };
+    }
+
+    // Fill in link indices (O(k) where k = number of link ranges)
+    for (size_t li = 0; li < linkRanges.size(); li++) {
+        const auto& lr = linkRanges[li];
+        for (int i = lr.startChar; i < lr.endChar && i < textLen; i++) {
+            if (i >= 0) charLinkIdx[i] = static_cast<int>(li);
+        }
+    }
 
     // Render each wrapped line
     for (const auto& line : lines) {
@@ -111,35 +116,20 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
         int charPos = line.startChar;
 
         while (charPos < line.endChar) {
-            // Get current styling info
-            const InlineLinkRange* currentLink = getLinkAt(charPos);
-            TextStyle currentStyle = getStyleAt(charPos);
-            bool inLink = (currentLink != nullptr);
+            // Get current styling info with O(1) lookup
+            int linkIdx = (charPos < textLen) ? charLinkIdx[charPos] : -1;
+            TextStyle currentStyle = (charPos < textLen) ? charStyles[charPos] : TextStyle::Normal;
+            bool inLink = (linkIdx >= 0);
 
             // Find where this segment ends (when style or link status changes)
-            int segmentEnd = line.endChar;
-
-            // Check link boundary
-            if (inLink) {
-                segmentEnd = std::min(segmentEnd, currentLink->endChar);
-            } else {
-                // Find where next link starts
-                for (const auto& lr : linkRanges) {
-                    if (lr.startChar > charPos && lr.startChar < segmentEnd) {
-                        segmentEnd = lr.startChar;
-                    }
+            int segmentEnd = charPos + 1;
+            while (segmentEnd < line.endChar) {
+                int nextLinkIdx = (segmentEnd < textLen) ? charLinkIdx[segmentEnd] : -1;
+                TextStyle nextStyle = (segmentEnd < textLen) ? charStyles[segmentEnd] : TextStyle::Normal;
+                if (nextLinkIdx != linkIdx || nextStyle != currentStyle) {
+                    break;
                 }
-            }
-
-            // Check style boundary
-            for (const auto& sr : styleRanges) {
-                if (charPos >= sr.startChar && charPos < sr.endChar) {
-                    // We're inside this style range - end at its boundary
-                    segmentEnd = std::min(segmentEnd, sr.endChar);
-                } else if (sr.startChar > charPos && sr.startChar < segmentEnd) {
-                    // This style range starts later - end before it
-                    segmentEnd = sr.startChar;
-                }
+                segmentEnd++;
             }
 
             // Extract segment text using character indices (not byte indices)
@@ -262,6 +252,49 @@ void Painter::paintTableCell(const TableCellLayoutObject* cellObject, DisplayLis
     (void)displayList;
 }
 
+void Painter::paintListItem(const ListItemLayoutObject* listItemObject, DisplayList& displayList) {
+    const Rect& rect = listItemObject->getRect();
+    ListMarkerType markerType = listItemObject->getMarkerType();
+    const std::string& markerText = listItemObject->getMarkerText();
+    int indentLevel = listItemObject->getIndentLevel();
+
+    // Get the first child's position for accurate marker alignment
+    float textY = rect.position.y;
+    const auto& children = listItemObject->getChildren();
+    if (!children.empty()) {
+        textY = children[0]->getRect().position.y;
+    }
+
+    // Calculate marker position
+    float textIndent = Typography::LIST_INDENT * (indentLevel + 1);
+    float markerX = rect.position.x + textIndent - Typography::LIST_INDENT + 2.0f;
+    float markerY = textY + Typography::BASE_FONT_SIZE;  // Baseline aligned with text
+
+    Color markerColor(60, 60, 60, 255);
+
+    if (markerType == ListMarkerType::Bullet) {
+        // Draw bullet as a small filled circle
+        float bulletSize = 6.0f;
+        float bulletY = textY + Typography::BASE_FONT_SIZE * 0.35f;
+        auto bulletOp = std::make_unique<DrawRectOp>(
+            Rect(markerX + 2.0f, bulletY, bulletSize, bulletSize),
+            markerColor
+        );
+        displayList.push_back(std::move(bulletOp));
+    } else {
+        // Draw the marker text (e.g., "1.", "a.")
+        auto textOp = std::make_unique<DrawTextOp>(
+            Point(markerX, markerY),
+            markerText,
+            markerColor,
+            Typography::BASE_FONT_SIZE,
+            TextStyle::Normal,
+            false
+        );
+        displayList.push_back(std::move(textOp));
+    }
+}
+
 void Painter::paintBackground(const LayoutObject* layoutObject, DisplayList& displayList) {
     Color bgColor = getBackgroundColor(layoutObject->getSourceObject());
     if (bgColor.a > 0) {
@@ -331,8 +364,7 @@ void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
     (void)text;
     (void)textLength;
 
-    // Skip if caret is not visible (blinking off)
-    if (!caret.caretVisible) return;
+    // Always generate caret op - visibility is handled by rasterizer
 
     // Find layout object for cursor position
     DOMPositionResult result = findLayoutForPosition(layoutRoot, caret.cursorPosition);

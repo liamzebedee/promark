@@ -46,7 +46,7 @@ Rasterizer::~Rasterizer() {
     }
 }
 
-void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY) {
+void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY, bool caretVisible) {
     // Initialize GL2 renderer on first use (need OpenGL context to be ready)
     if (!gl2Initialized) {
         atlas->init();
@@ -80,7 +80,10 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport,
                 executeDrawDebugBorder(static_cast<const DrawDebugBorderOp&>(*op));
                 break;
             case PaintOpType::DrawCaret:
-                executeDrawCaret(static_cast<const DrawCaretOp&>(*op));
+                // Only draw caret if visible (for blinking)
+                if (caretVisible) {
+                    executeDrawCaret(static_cast<const DrawCaretOp&>(*op));
+                }
                 break;
             case PaintOpType::DrawSelectionRect:
                 executeDrawSelectionRect(static_cast<const DrawSelectionRectOp&>(*op));

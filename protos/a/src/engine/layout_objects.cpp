@@ -205,20 +205,19 @@ void TextLayoutObject::shapeText() {
     float fontSize = getFontSize();
     float x = 0.0f;
 
-    // Get style ranges to determine which characters use mono font (inline code)
+    // Get style ranges and pre-compute code style flags for O(1) lookup
     const auto& styleRanges = getStyleRanges();
+    size_t textCodepoints = utf8::length(text);
+    std::vector<bool> isCode(textCodepoints, false);
 
-    // Helper to check if a character index is styled as Code
-    auto isCodeStyle = [&styleRanges](int charIdx) -> bool {
-        for (const auto& sr : styleRanges) {
-            if (charIdx >= sr.startChar && charIdx < sr.endChar) {
-                if (hasStyle(sr.style, TextStyle::Code)) {
-                    return true;
-                }
+    // Mark code-styled characters (O(m) where m = number of style ranges)
+    for (const auto& sr : styleRanges) {
+        if (hasStyle(sr.style, TextStyle::Code)) {
+            for (int i = sr.startChar; i < sr.endChar && i < (int)textCodepoints; i++) {
+                if (i >= 0) isCode[i] = true;
             }
         }
-        return false;
-    };
+    }
 
     // Set up both fonts if available
     if (fontFace) {
@@ -244,7 +243,7 @@ void TextLayoutObject::shapeText() {
 
             // Choose font based on whether this character is inline code
             FT_Face faceToUse = fontFace;
-            if (monoFontFace && isCodeStyle(charIdx)) {
+            if (monoFontFace && charIdx < (int)isCode.size() && isCode[charIdx]) {
                 faceToUse = monoFontFace;
             }
 
@@ -658,4 +657,50 @@ void TableCellLayoutObject::layout(const Size& availableSpace) {
 
     rect.size.width = availableSpace.width;
     rect.size.height = y;
+}
+
+// List Layout Objects
+
+ListItemLayoutObject::ListItemLayoutObject(const MarkdownObject* sourceObject)
+    : LayoutObject(sourceObject, LayoutFlow::Block) {
+}
+
+void ListItemLayoutObject::layout(const Size& availableSpace) {
+    // Get indent level and compute indent
+    int indent = getIndentLevel();
+    float indentWidth = Typography::LIST_INDENT * (indent + 1);  // +1 for base indent
+
+    float y = 0;
+    float contentWidth = availableSpace.width - indentWidth;
+
+    // Layout children (text content)
+    for (auto& child : children) {
+        Size childAvailable(contentWidth, availableSpace.height - y);
+        child->layout(childAvailable);
+
+        Rect childRect = child->getRect();
+        childRect.position.x = indentWidth;  // Offset by indent
+        childRect.position.y = y;
+        child->setRect(childRect);
+
+        y += childRect.size.height;
+    }
+
+    rect.size.width = availableSpace.width;
+    rect.size.height = std::max(y, Typography::BASE_FONT_SIZE);
+}
+
+ListMarkerType ListItemLayoutObject::getMarkerType() const {
+    const ListItemObject* itemObj = static_cast<const ListItemObject*>(sourceObject);
+    return itemObj->getMarkerType();
+}
+
+const std::string& ListItemLayoutObject::getMarkerText() const {
+    const ListItemObject* itemObj = static_cast<const ListItemObject*>(sourceObject);
+    return itemObj->getMarkerText();
+}
+
+int ListItemLayoutObject::getIndentLevel() const {
+    const ListItemObject* itemObj = static_cast<const ListItemObject*>(sourceObject);
+    return itemObj->getIndentLevel();
 }

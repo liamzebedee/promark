@@ -15,7 +15,7 @@ public:
     Rasterizer();
     ~Rasterizer();
 
-    void rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY = 0.0f);
+    void rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY = 0.0f, bool caretVisible = true);
     bool initializeFont();
 
 private:

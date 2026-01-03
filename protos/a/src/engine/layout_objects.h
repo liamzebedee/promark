@@ -170,3 +170,13 @@ public:
 
     TableCellAlign getAlignment() const;
 };
+
+class ListItemLayoutObject : public LayoutObject {
+public:
+    ListItemLayoutObject(const MarkdownObject* sourceObject);
+    void layout(const Size& availableSpace) override;
+
+    ListMarkerType getMarkerType() const;
+    const std::string& getMarkerText() const;
+    int getIndentLevel() const;
+};

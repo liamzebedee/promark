@@ -20,6 +20,11 @@ private:
     // Table parsing
     void parseTableRow(const std::string& line, const std::vector<TableCellAlign>& alignments, MarkdownObject* row);
 
+    // List parsing
+    bool isListItem(const std::string& line);
+    bool isOrderedListItem(const std::string& line);
+    size_t parseListMarker(const std::string& line, ListMarkerType& type, std::string& marker);
+
     bool isHeading(const std::string& text, size_t position);
     bool isBlockQuote(const std::string& text, size_t position);
     bool isCodeBlock(const std::string& text, size_t position);

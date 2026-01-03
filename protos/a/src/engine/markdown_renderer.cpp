@@ -19,8 +19,15 @@ void MarkdownRenderer::setTextBuffer(std::unique_ptr<TextBuffer> buffer) {
 }
 
 void MarkdownRenderer::setCaretState(const CaretState& state) {
+    // Only repaint if something other than caret visibility changed
+    bool positionChanged = (state.cursorPosition != caretState.cursorPosition ||
+                           state.selectionStart != caretState.selectionStart ||
+                           state.selectionEnd != caretState.selectionEnd ||
+                           state.hasSelection != caretState.hasSelection);
     caretState = state;
-    needsRepaint = true;  // Caret changes require repaint
+    if (positionChanged) {
+        needsRepaint = true;
+    }
 }
 
 void MarkdownRenderer::setFontFace(FT_Face face) {
@@ -96,7 +103,7 @@ void MarkdownRenderer::paint() {
 
 void MarkdownRenderer::rasterize(const Size& viewportSize, float scrollOffsetY) {
     Rect viewport(0, 0, viewportSize.width, viewportSize.height);
-    rasterizer->rasterize(displayList, viewport, scrollOffsetY);
+    rasterizer->rasterize(displayList, viewport, scrollOffsetY, caretState.caretVisible);
 }
 
 const MarkdownObject* MarkdownRenderer::getObjectTree() const {
@@ -198,75 +205,155 @@ int MarkdownRenderer::hitTest(float x, float y) const {
     int domPos = 0;
     collectTextLayoutsWithPos(layoutTree.get(), textLayouts, domPos);
 
-    // Find which text layout contains the click point
+    // Find which text layout and which LINE within it contains the click point
+    // Must check BOTH x and y because inline elements share the same y range
     const TextLayoutObject* hitLayout = nullptr;
     int hitDOMStart = 0;
+    int hitLineIdx = -1;
 
     for (const auto& [layout, layoutDOMPos] : textLayouts) {
         const Rect& rect = layout->getRect();
-        float layoutHeight = rect.size.height;
-        if (layoutHeight <= 0) {
-            layoutHeight = layout->getFontSize();  // Fallback
+        const auto& lines = layout->getLines();
+        float fontSize = layout->getFontSize();
+
+        // Check each line within this layout
+        for (size_t lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
+            const auto& line = lines[lineIdx];
+            float lineY = rect.position.y + line.yOffset;
+            float lineHeight = fontSize;
+
+            // Check Y range
+            if (y >= lineY && y < lineY + lineHeight) {
+                // Also check X range for this line
+                float lineStartX = rect.position.x;
+                float lineEndX = rect.position.x + line.width;
+
+                if (x >= lineStartX && x <= lineEndX) {
+                    // Perfect match - x and y both within this text
+                    hitLayout = layout;
+                    hitDOMStart = layoutDOMPos;
+                    hitLineIdx = static_cast<int>(lineIdx);
+                    break;
+                }
+            }
+        }
+        if (hitLayout) break;
+    }
+
+    // If no exact match, find the text layout on the same line that's closest in X
+    if (!hitLayout && !textLayouts.empty()) {
+        // First, find all layouts at the clicked Y position
+        std::vector<std::tuple<const TextLayoutObject*, int, int, float, float>> candidates;
+
+        for (const auto& [layout, layoutDOMPos] : textLayouts) {
+            const Rect& rect = layout->getRect();
+            const auto& lines = layout->getLines();
+            float fontSize = layout->getFontSize();
+
+            for (size_t lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
+                const auto& line = lines[lineIdx];
+                float lineY = rect.position.y + line.yOffset;
+                float lineHeight = fontSize;
+
+                if (y >= lineY && y < lineY + lineHeight) {
+                    float lineStartX = rect.position.x;
+                    float lineEndX = rect.position.x + line.width;
+                    candidates.push_back({layout, layoutDOMPos, static_cast<int>(lineIdx), lineStartX, lineEndX});
+                }
+            }
         }
 
-        // Check if y is within this layout's vertical bounds
-        if (y >= rect.position.y && y < rect.position.y + layoutHeight) {
-            hitLayout = layout;
-            hitDOMStart = layoutDOMPos;
-            break;
+        if (!candidates.empty()) {
+            // Find which candidate the x position falls into or is closest to
+            for (const auto& [layout, layoutDOMPos, lineIdx, startX, endX] : candidates) {
+                if (x < startX) {
+                    // Click is before this element - if it's the first, use it
+                    if (!hitLayout) {
+                        hitLayout = layout;
+                        hitDOMStart = layoutDOMPos;
+                        hitLineIdx = lineIdx;
+                    }
+                } else if (x <= endX) {
+                    // Click is within this element
+                    hitLayout = layout;
+                    hitDOMStart = layoutDOMPos;
+                    hitLineIdx = lineIdx;
+                    break;
+                } else {
+                    // Click is after this element - remember it as potential match
+                    hitLayout = layout;
+                    hitDOMStart = layoutDOMPos;
+                    hitLineIdx = lineIdx;
+                }
+            }
         }
     }
 
-    // If no layout found at y, find closest one
+    // If still no layout found, find closest by Y
     if (!hitLayout && !textLayouts.empty()) {
         float minDist = 1e9f;
         for (const auto& [layout, layoutDOMPos] : textLayouts) {
             const Rect& rect = layout->getRect();
-            float layoutHeight = rect.size.height;
-            if (layoutHeight <= 0) {
-                layoutHeight = layout->getFontSize();
-            }
-            float centerY = rect.position.y + layoutHeight / 2;
-            float dist = std::abs(y - centerY);
-            if (dist < minDist) {
-                minDist = dist;
-                hitLayout = layout;
-                hitDOMStart = layoutDOMPos;
+            const auto& lines = layout->getLines();
+            float fontSize = layout->getFontSize();
+
+            for (size_t lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
+                const auto& line = lines[lineIdx];
+                float lineY = rect.position.y + line.yOffset;
+                float lineHeight = fontSize;
+                float centerY = lineY + lineHeight / 2;
+                float dist = std::abs(y - centerY);
+                if (dist < minDist) {
+                    minDist = dist;
+                    hitLayout = layout;
+                    hitDOMStart = layoutDOMPos;
+                    hitLineIdx = static_cast<int>(lineIdx);
+                }
             }
         }
     }
 
     if (!hitLayout) return 0;
 
-    // Find character position within the layout based on x
+    // Find character position within the specific line based on x
     const Rect& rect = hitLayout->getRect();
+    const auto& lines = hitLayout->getLines();
     int charCount = hitLayout->getCharCount();
 
-    if (charCount == 0) {
+    if (charCount == 0 || lines.empty()) {
         // Empty line
         return domToRaw(hitDOMStart);
     }
 
+    // Clamp hitLineIdx to valid range
+    if (hitLineIdx < 0) hitLineIdx = 0;
+    if (hitLineIdx >= static_cast<int>(lines.size())) hitLineIdx = static_cast<int>(lines.size()) - 1;
+
+    const auto& line = lines[hitLineIdx];
+    int lineStartChar = line.startChar;
+    int lineEndChar = line.endChar;
+
     // If click is before the text start
     if (x <= rect.position.x) {
-        return domToRaw(hitDOMStart);
+        return domToRaw(hitDOMStart + lineStartChar);
     }
 
-    // Find which character was clicked
+    // Find which character on this line was clicked using line-relative x offset
     float relX = x - rect.position.x;
-    for (int i = 0; i < charCount; i++) {
-        float charEnd = hitLayout->getCharXOffset(i);
-        float charStart = (i == 0) ? 0 : hitLayout->getCharXOffset(i - 1);
-        float charMid = (charStart + charEnd) / 2;
 
-        if (relX < charMid) {
+    for (int i = lineStartChar; i < lineEndChar; i++) {
+        float charEndX = hitLayout->getCharXOffsetInLine(i + 1);
+        float charStartX = (i == lineStartChar) ? 0 : hitLayout->getCharXOffsetInLine(i);
+        float charMidX = (charStartX + charEndX) / 2;
+
+        if (relX < charMidX) {
             // Click is in first half of char - position before it
             return domToRaw(hitDOMStart + i);
         }
     }
 
-    // Click is after all characters
-    return domToRaw(hitDOMStart + charCount);
+    // Click is after all characters on this line
+    return domToRaw(hitDOMStart + lineEndChar);
 }
 
 float MarkdownRenderer::getCursorY(int domPos) const {

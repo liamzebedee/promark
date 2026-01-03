@@ -1,5 +1,11 @@
 - cursor positioning
 - newlines / double spacing
-- 
-
-
+- single space at end of sentence leads to a newline between paragraphs
+- lists
+    - blockquotes within lists don't work
+- raw mode
+    - highlight should carry across in raw mode
+    - cursor position should carry across too - be center of line
+- undo
+    - undo should focus where you are on the line
+    - when you type in rapid succession "asdsadsadasd", it should be debounced and added as one op to the undo buffer

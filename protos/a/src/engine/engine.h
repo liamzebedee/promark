@@ -131,4 +131,6 @@ private:
     // Raw mode toggle
     bool showRaw;
     void renderRawText(int width, int height);
+    int hitTestRaw(float x, float y);
+    float getCursorYRaw();
 };

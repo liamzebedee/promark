@@ -78,6 +78,10 @@ bool ListObject::isOrdered() const {
     return ordered;
 }
 
+ListItemObject::ListItemObject()
+    : MarkdownObject(MarkdownObjectType::ListItem) {
+}
+
 CodeBlockObject::CodeBlockObject(const std::string& language)
     : MarkdownObject(MarkdownObjectType::CodeBlock), language(language) {
 }

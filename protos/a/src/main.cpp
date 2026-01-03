@@ -157,7 +157,7 @@ int main() {
         return -1;
     }
 
-    engine->setContent("# Welcome to MD Editor\n\nDrag an image file here to insert it.\n");
+    engine->setContent("# Lists Demo\n\nBullet list:\n\n- Apple\n- Banana\n- Cherry\n\nNumbered list:\n\n1. First item\n2. Second item\n3. Third item\n");
 
     bool windowShown = false;
     while (!glfwWindowShouldClose(window)) {

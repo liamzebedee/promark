@@ -135,13 +135,39 @@ public:
     BlockQuoteObject();
 };
 
+// List marker type
+enum class ListMarkerType {
+    Bullet,     // - or *
+    Number,     // 1. 2. 3.
+    Letter      // a. b. c. or A. B. C.
+};
+
 class ListObject : public MarkdownObject {
 public:
     ListObject(bool ordered);
     bool isOrdered() const;
+    void setIndentLevel(int level) { indentLevel = level; }
+    int getIndentLevel() const { return indentLevel; }
 
 private:
     bool ordered;
+    int indentLevel = 0;
+};
+
+class ListItemObject : public MarkdownObject {
+public:
+    ListItemObject();
+    void setMarkerType(ListMarkerType type) { markerType = type; }
+    ListMarkerType getMarkerType() const { return markerType; }
+    void setMarkerText(const std::string& text) { markerText = text; }
+    const std::string& getMarkerText() const { return markerText; }
+    void setIndentLevel(int level) { indentLevel = level; }
+    int getIndentLevel() const { return indentLevel; }
+
+private:
+    ListMarkerType markerType = ListMarkerType::Bullet;
+    std::string markerText = "-";  // The actual marker (-, *, 1., a., etc.)
+    int indentLevel = 0;
 };
 
 class CodeBlockObject : public MarkdownObject {

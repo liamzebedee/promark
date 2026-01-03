@@ -151,9 +151,9 @@ void Engine::render(int width, int height) {
     glEnable(GL_SCISSOR_TEST);
     glScissor(0, 0, width, height - TOOLBAR_HEIGHT);
 
-    // Update cursor blink (530ms cycle)
+    // Update cursor blink (320ms cycle)
     double currentTime = glfwGetTime();
-    if (currentTime - lastBlinkTime > 0.53) {
+    if (currentTime - lastBlinkTime > 0.320) {
         caretVisible = !caretVisible;
         lastBlinkTime = currentTime;
     }
@@ -257,7 +257,29 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 undo();
                 return;
             } else if (key == GLFW_KEY_R) {
+                // Get cursor's current screen Y position before toggle
+                float cursorScreenY = 0;
+                if (showRaw) {
+                    cursorScreenY = getCursorYRaw() - scrollOffset;
+                } else if (markdownRenderer) {
+                    int domPos = markdownRenderer->rawToDOM(cursorPos);
+                    cursorScreenY = markdownRenderer->getCursorY(domPos) - scrollOffset;
+                }
+
                 showRaw = !showRaw;
+
+                // Get cursor's new content Y position after toggle
+                float newCursorY = 0;
+                if (showRaw) {
+                    newCursorY = getCursorYRaw();
+                } else if (markdownRenderer) {
+                    int domPos = markdownRenderer->rawToDOM(cursorPos);
+                    newCursorY = markdownRenderer->getCursorY(domPos);
+                }
+
+                // Adjust scroll to keep cursor at same screen position
+                scrollOffset = newCursorY - cursorScreenY;
+                if (scrollOffset < 0) scrollOffset = 0;
                 return;
             }
         }
@@ -493,7 +515,24 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
             }
 
             leftMouseHeld = true;
-            if (markdownRenderer) {
+
+            // Detect multi-click (within 400ms and 5 pixels)
+            double currentTime = glfwGetTime();
+            bool isMultiClick = (currentTime - lastClickTime < 0.4) &&
+                                (std::abs(x - lastClickX) < 5) &&
+                                (std::abs(y - lastClickY) < 5);
+
+            if (isMultiClick) {
+                clickCount = (clickCount % 3) + 1;  // Cycle 1->2->3->1
+            } else {
+                clickCount = 1;
+            }
+
+            if (showRaw) {
+                // Raw mode: simple monospace hit test directly on raw buffer
+                cursorPos = hitTestRaw(static_cast<float>(x), static_cast<float>(y));
+                cursorPos = std::max(0, std::min(cursorPos, inputLength));
+            } else if (markdownRenderer) {
                 // Adjust y for toolbar and add scroll offset to get content-space y coordinate
                 float contentY = static_cast<float>(y - TOOLBAR_HEIGHT) + scrollOffset;
 
@@ -506,55 +545,43 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                     return;
                 }
 
-                // Detect multi-click (within 400ms and 5 pixels)
-                double currentTime = glfwGetTime();
-                bool isMultiClick = (currentTime - lastClickTime < 0.4) &&
-                                    (std::abs(x - lastClickX) < 5) &&
-                                    (std::abs(y - lastClickY) < 5);
-
-                if (isMultiClick) {
-                    clickCount = (clickCount % 3) + 1;  // Cycle 1->2->3->1
-                } else {
-                    clickCount = 1;
-                }
-
                 cursorPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
                 cursorPos = std::max(0, std::min(cursorPos, inputLength));
-
-                if (clickCount == 3) {
-                    // Triple-click: select line
-                    int lineStart = findLineStart(cursorPos);
-                    int lineEnd = findLineEnd(cursorPos);
-                    // Include the newline if present
-                    if (lineEnd < inputLength && inputBuffer[lineEnd] == '\n') {
-                        lineEnd++;
-                    }
-                    selectionStart = lineStart;
-                    selectionEnd = lineEnd;
-                    cursorPos = lineEnd;
-                    hasSelection = (selectionStart != selectionEnd);
-                    leftMouseHeld = false;  // Don't drag after triple-click
-                } else if (clickCount == 2) {
-                    // Double-click: select word
-                    int wordStart = findWordBoundary(cursorPos, -1);
-                    int wordEnd = findWordBoundary(cursorPos, 1);
-                    selectionStart = wordStart;
-                    selectionEnd = wordEnd;
-                    cursorPos = wordEnd;
-                    hasSelection = (selectionStart != selectionEnd);
-                    leftMouseHeld = false;  // Don't drag after double-click
-                } else {
-                    // Single click
-                    goalColumn = getColumnInLine(cursorPos);
-                    selectionStart = cursorPos;
-                    selectionEnd = cursorPos;
-                    hasSelection = false;
-                }
-
-                lastClickTime = currentTime;
-                lastClickX = x;
-                lastClickY = y;
             }
+
+            if (clickCount == 3) {
+                // Triple-click: select line
+                int lineStart = findLineStart(cursorPos);
+                int lineEnd = findLineEnd(cursorPos);
+                // Include the newline if present
+                if (lineEnd < inputLength && inputBuffer[lineEnd] == '\n') {
+                    lineEnd++;
+                }
+                selectionStart = lineStart;
+                selectionEnd = lineEnd;
+                cursorPos = lineEnd;
+                hasSelection = (selectionStart != selectionEnd);
+                leftMouseHeld = false;  // Don't drag after triple-click
+            } else if (clickCount == 2) {
+                // Double-click: select word
+                int wordStart = findWordBoundary(cursorPos, -1);
+                int wordEnd = findWordBoundary(cursorPos, 1);
+                selectionStart = wordStart;
+                selectionEnd = wordEnd;
+                cursorPos = wordEnd;
+                hasSelection = (selectionStart != selectionEnd);
+                leftMouseHeld = false;  // Don't drag after double-click
+            } else {
+                // Single click
+                goalColumn = getColumnInLine(cursorPos);
+                selectionStart = cursorPos;
+                selectionEnd = cursorPos;
+                hasSelection = false;
+            }
+
+            lastClickTime = currentTime;
+            lastClickX = x;
+            lastClickY = y;
         } else if (action == GLFW_RELEASE) {
             leftMouseHeld = false;
         }
@@ -568,10 +595,17 @@ void Engine::openUrl(const std::string& url) {
 }
 
 void Engine::handleMouseMove(double x, double y) {
-    if (leftMouseHeld && markdownRenderer) {
-        // Adjust y for toolbar and add scroll offset
-        float contentY = static_cast<float>(y - TOOLBAR_HEIGHT) + scrollOffset;
-        int newPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
+    if (leftMouseHeld) {
+        int newPos;
+        if (showRaw) {
+            newPos = hitTestRaw(static_cast<float>(x), static_cast<float>(y));
+        } else if (markdownRenderer) {
+            // Adjust y for toolbar and add scroll offset
+            float contentY = static_cast<float>(y - TOOLBAR_HEIGHT) + scrollOffset;
+            newPos = markdownRenderer->hitTest(static_cast<float>(x), contentY);
+        } else {
+            return;
+        }
         newPos = std::max(0, std::min(newPos, inputLength));
         cursorPos = newPos;
         selectionEnd = newPos;
@@ -1003,6 +1037,185 @@ void Engine::undo() {
     // Reset blink
     lastBlinkTime = glfwGetTime();
     caretVisible = true;
+}
+
+float Engine::getCursorYRaw() {
+    // Use same layout constants as renderRawText
+    float fontSize = Typography::BASE_FONT_SIZE;
+    float lineHeight = fontSize * 1.2f;
+    float leftMargin = Typography::DOCUMENT_MARGIN;
+    float rightMargin = Typography::DOCUMENT_MARGIN;
+    float maxLineWidth = viewportWidth - leftMargin - rightMargin;
+    float topMargin = Typography::DOCUMENT_MARGIN;  // Content space, no toolbar offset
+
+    // Calculate character width for monospace
+    float charWidth = fontSize * 0.6f;
+    if (monoFace && uiAtlas) {
+        FT_Set_Pixel_Sizes(monoFace, 0, static_cast<FT_UInt>(fontSize));
+        const AtlasGlyph* g = uiAtlas->get('M', fontSize, TextStyle::Normal, true, monoFace);
+        if (g) charWidth = g->advance;
+    }
+
+    float lineY = topMargin + fontSize;
+    float lineX = 0;
+    int lineStart = 0;
+
+    for (int i = 0; i < inputLength; i++) {
+        // Check if cursor is at this position
+        if (i == cursorPos) {
+            return lineY;
+        }
+
+        char c = inputBuffer[i];
+
+        if (c == '\n') {
+            lineY += lineHeight;
+            lineX = 0;
+            lineStart = i + 1;
+            continue;
+        }
+
+        // Word wrap check
+        if (lineX + charWidth > maxLineWidth && i > lineStart) {
+            int breakPoint = -1;
+            for (int j = i - 1; j >= lineStart; j--) {
+                if (inputBuffer[j] == ' ') {
+                    breakPoint = j;
+                    break;
+                }
+            }
+
+            if (breakPoint > lineStart) {
+                lineY += lineHeight;
+                lineStart = breakPoint + 1;
+                lineX = (i - lineStart) * charWidth;
+            } else {
+                lineY += lineHeight;
+                lineStart = i;
+                lineX = 0;
+            }
+        }
+
+        lineX += charWidth;
+    }
+
+    // Cursor at end
+    return lineY;
+}
+
+int Engine::hitTestRaw(float x, float y) {
+    // Use same layout constants as renderRawText
+    float fontSize = Typography::BASE_FONT_SIZE;
+    float lineHeight = fontSize * 1.2f;
+    float leftMargin = Typography::DOCUMENT_MARGIN;
+    float rightMargin = Typography::DOCUMENT_MARGIN;
+    float maxLineWidth = viewportWidth - leftMargin - rightMargin;
+    float topMargin = TOOLBAR_HEIGHT + Typography::DOCUMENT_MARGIN - scrollOffset;
+
+    // Calculate character width for monospace
+    float charWidth = fontSize * 0.6f;
+    if (monoFace && uiAtlas) {
+        FT_Set_Pixel_Sizes(monoFace, 0, static_cast<FT_UInt>(fontSize));
+        const AtlasGlyph* g = uiAtlas->get('M', fontSize, TextStyle::Normal, true, monoFace);
+        if (g) charWidth = g->advance;
+    }
+
+    // Build line structure matching renderRawText
+    struct RawLine {
+        int startIdx;
+        int endIdx;
+        float yPos;
+    };
+    std::vector<RawLine> lines;
+
+    float lineY = topMargin + fontSize;
+    float lineX = 0;
+    int lineStart = 0;
+
+    for (int i = 0; i < inputLength; i++) {
+        char c = inputBuffer[i];
+
+        if (c == '\n') {
+            lines.push_back({lineStart, i, lineY});
+            lineY += lineHeight;
+            lineX = 0;
+            lineStart = i + 1;
+            continue;
+        }
+
+        // Word wrap check
+        if (lineX + charWidth > maxLineWidth && i > lineStart) {
+            // Find break point (last space)
+            int breakPoint = -1;
+            for (int j = i - 1; j >= lineStart; j--) {
+                if (inputBuffer[j] == ' ') {
+                    breakPoint = j;
+                    break;
+                }
+            }
+
+            if (breakPoint > lineStart) {
+                lines.push_back({lineStart, breakPoint, lineY});
+                lineY += lineHeight;
+                lineStart = breakPoint + 1;
+                lineX = (i - lineStart) * charWidth;
+            } else {
+                lines.push_back({lineStart, i, lineY});
+                lineY += lineHeight;
+                lineStart = i;
+                lineX = 0;
+            }
+        }
+
+        lineX += charWidth;
+    }
+
+    // Add final line
+    lines.push_back({lineStart, inputLength, lineY});
+
+    // Find which line was clicked
+    int clickedLineIdx = -1;
+    for (size_t i = 0; i < lines.size(); i++) {
+        float lineTop = lines[i].yPos - fontSize;
+        float lineBottom = lines[i].yPos + (lineHeight - fontSize);
+        if (y >= lineTop && y < lineBottom) {
+            clickedLineIdx = static_cast<int>(i);
+            break;
+        }
+    }
+
+    // If no line found, find closest
+    if (clickedLineIdx < 0) {
+        if (y < topMargin) {
+            clickedLineIdx = 0;
+        } else {
+            clickedLineIdx = static_cast<int>(lines.size()) - 1;
+        }
+    }
+
+    if (lines.empty()) return 0;
+
+    const RawLine& line = lines[clickedLineIdx];
+    int lineLen = line.endIdx - line.startIdx;
+
+    // Find character position based on x
+    float relX = x - leftMargin;
+    if (relX < 0) {
+        return line.startIdx;
+    }
+
+    int charIdx = static_cast<int>(relX / charWidth);
+    // Use half-character threshold for more accurate positioning
+    float remainder = relX - (charIdx * charWidth);
+    if (remainder > charWidth / 2) {
+        charIdx++;
+    }
+
+    if (charIdx > lineLen) {
+        charIdx = lineLen;
+    }
+
+    return line.startIdx + charIdx;
 }
 
 void Engine::renderRawText(int width, int height) {
