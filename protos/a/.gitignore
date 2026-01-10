@@ -3,8 +3,32 @@ resources/big-file.md
 # Build artifacts
 build/
 
-# Vendor dependencies (downloaded on demand)
-vendor/
+# Compiled outputs (platform-specific)
+*.o
+*.a
+*.so
+*.dylib
+*.lib
+*.dll
+*.exe
+
+# CMake generated files (in build directories)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+vendor/*-build/Makefile
+vendor/*-build/**/Makefile
+*.pc
+*Config.cmake
+*ConfigVersion.cmake
+*-config.cmake
+*-config-version.cmake
+CPackConfig.cmake
+CPackSourceConfig.cmake
+
+# Build directory install outputs
+vendor/*-build/install/
 
 # Web build
 web/build/
