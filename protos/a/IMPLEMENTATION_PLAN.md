@@ -49,14 +49,22 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/rasterizer.cpp`, `src/engine/glyph_atlas.cpp`, `src/engine/batch_renderer.cpp`, `src/engine/engine.cpp`
 
 ### P0-4: Unify Layout Authority
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: None
-- **Problem**: Split authority - 4 of 8 layout objects position themselves:
+- **Problem**: Split authority - 4 of 8 layout objects positioned themselves:
   - `TableLayoutObject::layout()` - lines 550-576
   - `TableRowLayoutObject::layout()` - lines 587-624
   - `TableCellLayoutObject::layout()` - lines 635-662
   - `ListItemLayoutObject::layout()` - lines 670-693
+- **Solution**:
+  1. Removed special-case delegation in `performLayout()` for Table/TableRow/TableCell/ListItem
+  2. Added new methods to LayoutEngine: `layoutTable()`, `layoutTableRow()`, `layoutTableCell()`, `layoutListItem()`, `computeTableColumnWidths()`
+  3. Updated `layoutBlockFlow()` to call `layoutListItem()` directly for ListItem children
+  4. Removed the `skipPropagate` flag workaround (ready for cleanup in P3-3)
+  5. Updated the layout objects to have no-op `layout()` methods (marked as bypassed, kept for backwards compatibility)
+
+  The engine is now the sole authority for positioning. All 12 tests pass.
 - **Spec Reference**: `specs/02-layout-system.md` - "Engine Coordinates, Objects Measure"
 - **Files**: `src/engine/layout_objects.cpp`, `src/engine/layout_engine.cpp`
 

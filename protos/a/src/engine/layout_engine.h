@@ -27,4 +27,11 @@ private:
     void layoutBlockFlow(LayoutObject* layoutObject, const Size& availableSpace);
     void layoutInlineFlow(LayoutObject* layoutObject, const Size& availableSpace);
     void propagatePositionToChildren(LayoutObject* parent, float parentX, float parentY);
+
+    // Unified layout authority: LayoutEngine positions all objects
+    void layoutTable(LayoutObject* table, const Size& availableSpace);
+    void layoutTableRow(LayoutObject* row, const std::vector<float>& columnWidths, const Size& availableSpace);
+    void layoutTableCell(LayoutObject* cell, TableCellAlign alignment, const Size& availableSpace);
+    void layoutListItem(LayoutObject* listItem, const Size& availableSpace);
+    std::vector<float> computeTableColumnWidths(LayoutObject* table, float availableWidth);
 };

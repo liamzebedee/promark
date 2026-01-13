@@ -1,3 +1,6 @@
+# Enable parallel compilation by default using all CPU cores
+MAKEFLAGS += -j$(shell nproc)
+
 CXX = g++
 VENDOR_DIR = vendor
 GLFW_BUILD_DIR = $(VENDOR_DIR)/glfw-build
@@ -48,8 +51,13 @@ TARGET = $(BUILD_DIR)/mdeditor
 TARGET_EDIT = $(BUILD_DIR)/mdedit
 TARGET_TESTS = $(BUILD_DIR)/run_tests
 
+# Source files
 SOURCES = $(SRC_DIR)/main.cpp $(ENGINE_SRC)
 SOURCES_EDIT = $(SRC_DIR)/edit.cpp $(ENGINE_SRC)
+
+# Convert sources to object files (in build directory)
+OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES))
+OBJECTS_EDIT = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(SOURCES_EDIT))
 
 # Test sources
 TEST_DIR = tests
@@ -60,6 +68,10 @@ TEST_SOURCES = $(TEST_DIR)/run_tests.cpp \
                $(TEST_DIR)/test_block_layout.cpp \
                $(TEST_DIR)/test_cursor_positioning.cpp \
                $(TEST_DIR)/test_mouse_click.cpp
+
+# Test objects (engine objects + test-specific objects)
+ENGINE_OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(ENGINE_SRC))
+TEST_OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(TEST_SOURCES))
 
 # Test-specific flags (need stb_image_write.h from GLFW deps)
 TEST_CXXFLAGS = $(CXXFLAGS) -I$(VENDOR_DIR)/glfw-3.4/deps
@@ -72,14 +84,25 @@ deps:
 		./setup_deps.sh; \
 	fi
 
-$(TARGET): $(SOURCES) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(SOURCES) -o $(TARGET) $(LDFLAGS)
+# Link targets from object files
+$(TARGET): $(OBJECTS)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(TARGET_EDIT): $(SOURCES_EDIT) | $(BUILD_DIR)
-	$(CXX) $(CXXFLAGS) $(SOURCES_EDIT) -o $(TARGET_EDIT) $(LDFLAGS)
+$(TARGET_EDIT): $(OBJECTS_EDIT)
+	$(CXX) $(CXXFLAGS) $^ -o $@ $(LDFLAGS)
 
-$(TARGET_TESTS): $(TEST_SOURCES) $(ENGINE_SRC) | $(BUILD_DIR)
-	$(CXX) $(TEST_CXXFLAGS) $(TEST_SOURCES) $(ENGINE_SRC) -o $(TARGET_TESTS) $(LDFLAGS)
+$(TARGET_TESTS): $(TEST_OBJECTS) $(ENGINE_OBJECTS)
+	$(CXX) $(TEST_CXXFLAGS) $^ -o $@ $(LDFLAGS)
+
+# Pattern rule for compiling source files to object files
+$(BUILD_DIR)/$(SRC_DIR)/%.o: $(SRC_DIR)/%.cpp | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Pattern rule for test files (with TEST_CXXFLAGS)
+$(BUILD_DIR)/$(TEST_DIR)/%.o: $(TEST_DIR)/%.cpp | $(BUILD_DIR)
+	@mkdir -p $(dir $@)
+	$(CXX) $(TEST_CXXFLAGS) -c $< -o $@
 
 test: deps $(TARGET_TESTS)
 	@echo "Running visual tests..."

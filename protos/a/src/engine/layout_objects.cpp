@@ -548,31 +548,12 @@ void TableLayoutObject::computeColumnWidths(float availableWidth) {
 }
 
 void TableLayoutObject::layout(const Size& availableSpace) {
+    // NOTE: This method is now bypassed - LayoutEngine::layoutTable() handles table layout.
+    // The engine is the sole authority for positioning (unified layout authority).
+    // This implementation is kept for backwards compatibility but should be removed in cleanup.
     computeColumnWidths(availableSpace.width);
-
-    float y = 0;
-    float borderWidth = 1.0f;
-    y += borderWidth;  // Top border
-
-    for (auto& child : children) {
-        if (TableRowLayoutObject* rowLayout = dynamic_cast<TableRowLayoutObject*>(child.get())) {
-            // Pass column widths to row via available space
-            // The row will position cells according to column widths
-            child->layout(availableSpace);
-
-            // Position row
-            Rect rowRect = child->getRect();
-            rowRect.position.x = 0;
-            rowRect.position.y = y;
-            rowRect.size.width = availableSpace.width;
-            child->setRect(rowRect);
-
-            y += rowRect.size.height + borderWidth;
-        }
-    }
-
     rect.size.width = availableSpace.width;
-    rect.size.height = y;
+    rect.size.height = 0;  // Size computed by engine
 }
 
 TableRowLayoutObject::TableRowLayoutObject(const MarkdownObject* sourceObject)
@@ -585,42 +566,11 @@ bool TableRowLayoutObject::isHeader() const {
 }
 
 void TableRowLayoutObject::layout(const Size& availableSpace) {
-    // Get column widths from parent table
-    TableLayoutObject* tableLayout = dynamic_cast<TableLayoutObject*>(parent);
-    if (!tableLayout) return;
-
-    const std::vector<float>& columnWidths = tableLayout->getColumnWidths();
-    float borderWidth = 1.0f;
-    float cellPadding = 8.0f;
-
-    float x = borderWidth;
-    float maxHeight = 0;
-
-    size_t colIndex = 0;
-    for (auto& child : children) {
-        if (colIndex >= columnWidths.size()) break;
-
-        float cellWidth = columnWidths[colIndex];
-
-        // Layout cell content
-        Size cellAvailable(cellWidth - cellPadding * 2, availableSpace.height);
-        child->layout(cellAvailable);
-
-        // Position cell
-        Rect cellRect = child->getRect();
-        cellRect.position.x = x + cellPadding;
-        cellRect.position.y = cellPadding;
-        cellRect.size.width = cellWidth - cellPadding * 2;
-        child->setRect(cellRect);
-
-        maxHeight = std::max(maxHeight, cellRect.size.height + cellPadding * 2);
-
-        x += cellWidth + borderWidth;
-        colIndex++;
-    }
-
+    // NOTE: This method is now bypassed - LayoutEngine::layoutTableRow() handles row layout.
+    // The engine is the sole authority for positioning (unified layout authority).
+    // This implementation is kept for backwards compatibility but should be removed in cleanup.
     rect.size.width = availableSpace.width;
-    rect.size.height = maxHeight;
+    rect.size.height = 0;  // Size computed by engine
 }
 
 TableCellLayoutObject::TableCellLayoutObject(const MarkdownObject* sourceObject)
@@ -633,32 +583,11 @@ TableCellAlign TableCellLayoutObject::getAlignment() const {
 }
 
 void TableCellLayoutObject::layout(const Size& availableSpace) {
-    float y = 0;
-    float contentWidth = 0;
-
-    // Layout children (text content)
-    for (auto& child : children) {
-        child->layout(availableSpace);
-        Rect childRect = child->getRect();
-        childRect.position.y = y;
-
-        // Handle alignment
-        TableCellAlign align = getAlignment();
-        if (align == TableCellAlign::Center) {
-            childRect.position.x = (availableSpace.width - childRect.size.width) / 2;
-        } else if (align == TableCellAlign::Right) {
-            childRect.position.x = availableSpace.width - childRect.size.width;
-        } else {
-            childRect.position.x = 0;
-        }
-
-        child->setRect(childRect);
-        y += childRect.size.height;
-        contentWidth = std::max(contentWidth, childRect.size.width);
-    }
-
+    // NOTE: This method is now bypassed - LayoutEngine::layoutTableCell() handles cell layout.
+    // The engine is the sole authority for positioning (unified layout authority).
+    // This implementation is kept for backwards compatibility but should be removed in cleanup.
     rect.size.width = availableSpace.width;
-    rect.size.height = y;
+    rect.size.height = 0;  // Size computed by engine
 }
 
 // List Layout Objects
@@ -668,28 +597,11 @@ ListItemLayoutObject::ListItemLayoutObject(const MarkdownObject* sourceObject)
 }
 
 void ListItemLayoutObject::layout(const Size& availableSpace) {
-    // Get indent level and compute indent
-    int indent = getIndentLevel();
-    float indentWidth = Typography::LIST_INDENT * (indent + 1);  // +1 for base indent
-
-    float y = 0;
-    float contentWidth = availableSpace.width - indentWidth;
-
-    // Layout children (text content)
-    for (auto& child : children) {
-        Size childAvailable(contentWidth, availableSpace.height - y);
-        child->layout(childAvailable);
-
-        Rect childRect = child->getRect();
-        childRect.position.x = indentWidth;  // Offset by indent
-        childRect.position.y = y;
-        child->setRect(childRect);
-
-        y += childRect.size.height;
-    }
-
+    // NOTE: This method is now bypassed - LayoutEngine::layoutListItem() handles list item layout.
+    // The engine is the sole authority for positioning (unified layout authority).
+    // This implementation is kept for backwards compatibility but should be removed in cleanup.
     rect.size.width = availableSpace.width;
-    rect.size.height = std::max(y, Typography::BASE_FONT_SIZE);
+    rect.size.height = Typography::BASE_FONT_SIZE;  // Minimum height
 }
 
 ListMarkerType ListItemLayoutObject::getMarkerType() const {

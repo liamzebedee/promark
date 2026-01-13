@@ -59,17 +59,17 @@ void LayoutEngine::performLayout(LayoutObject* layoutRoot, const Size& available
         return;
     }
 
-    // Handle table and list item layout specially - they manage their own child layout
+    // Unified layout authority: LayoutEngine handles all positioning
+    // No special-case delegation - engine is the single coordinator
     const MarkdownObject* sourceObj = layoutRoot->getSourceObject();
     if (sourceObj) {
         MarkdownObjectType type = sourceObj->getType();
-        if (type == MarkdownObjectType::Table ||
-            type == MarkdownObjectType::TableRow ||
-            type == MarkdownObjectType::TableCell ||
-            type == MarkdownObjectType::ListItem) {
-            layoutRoot->layout(availableSpace);
+        if (type == MarkdownObjectType::Table) {
+            layoutTable(layoutRoot, availableSpace);
             return;
         }
+        // TableRow and TableCell are handled by layoutTable/layoutTableRow
+        // ListItem is handled by layoutBlockFlow
     }
 
     // Perform layout based on flow type
@@ -162,9 +162,10 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
 
     for (const auto& child : layoutObject->getChildren()) {
         const MarkdownObject* childSource = child->getSourceObject();
+        MarkdownObjectType childType = childSource->getType();
 
         // Skip empty paragraphs visually (they exist for cursor positioning but don't add space)
-        if (childSource->getType() == MarkdownObjectType::Paragraph) {
+        if (childType == MarkdownObjectType::Paragraph) {
             std::string text = childSource->getText();
             // Check if paragraph is empty (only has empty text children)
             bool isEmpty = true;
@@ -182,23 +183,22 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
         }
 
         Size childAvailableSpace(availableSpace.width - marginLeft * 2, availableSpace.height - currentY);
-        performLayout(child.get(), childAvailableSpace);
+
+        // Unified layout authority: handle ListItem layout here, not in the object
+        if (childType == MarkdownObjectType::ListItem) {
+            layoutListItem(child.get(), childAvailableSpace);
+        } else {
+            performLayout(child.get(), childAvailableSpace);
+        }
 
         const Rect& childRect = child->getRect();
         float childX = marginLeft;
         float childY = currentY;
 
         // Set child position and propagate to grandchildren
+        // Engine is the single coordinator - always propagate positions
         child->setRect(Rect(childX, childY, childRect.size.width, childRect.size.height));
-
-        // For ListItem children, only propagate at document level to avoid double-propagation
-        // (ListItem::layout sets children to relative positions, and we only want to convert
-        // to absolute once, not both at List level AND Document level)
-        MarkdownObjectType childType = childSource->getType();
-        bool skipPropagate = (childType == MarkdownObjectType::ListItem && !isRoot);
-        if (!skipPropagate) {
-            propagatePositionToChildren(child.get(), childX, childY);
-        }
+        propagatePositionToChildren(child.get(), childX, childY);
 
         // Add spacing after this element (block spacing between elements)
         currentY += childRect.size.height;
@@ -234,6 +234,139 @@ void LayoutEngine::layoutInlineFlow(LayoutObject* layoutObject, const Size& avai
     // - Flow children left-to-right
     // - Break lines when necessary
     // - Handle baseline alignment
-    
+
     layoutObject->layout(availableSpace);
+}
+
+// ============================================================================
+// Unified Layout Authority: Table and List Layout
+// The LayoutEngine is the sole coordinator of all positioning.
+// Layout objects only report their intrinsic size - they never position
+// themselves or their children. This eliminates split authority.
+// ============================================================================
+
+std::vector<float> LayoutEngine::computeTableColumnWidths(LayoutObject* table, float availableWidth) {
+    const TableObject* tableObj = static_cast<const TableObject*>(table->getSourceObject());
+    int columnCount = tableObj->getColumnCount();
+    std::vector<float> columnWidths;
+
+    if (columnCount == 0) return columnWidths;
+
+    // Simple equal-width columns
+    float borderWidth = 1.0f;
+    float totalBorders = (columnCount + 1) * borderWidth;
+    float usableWidth = availableWidth - totalBorders;
+    float columnWidth = usableWidth / columnCount;
+
+    for (int i = 0; i < columnCount; i++) {
+        columnWidths.push_back(columnWidth);
+    }
+    return columnWidths;
+}
+
+void LayoutEngine::layoutTable(LayoutObject* table, const Size& availableSpace) {
+    // Engine computes column widths and positions all rows
+    std::vector<float> columnWidths = computeTableColumnWidths(table, availableSpace.width);
+
+    float y = 0;
+    float borderWidth = 1.0f;
+    y += borderWidth;  // Top border
+
+    for (auto& child : table->getChildren()) {
+        // Engine positions table rows
+        layoutTableRow(child.get(), columnWidths, availableSpace);
+
+        const Rect& rowRect = child->getRect();
+        // Position row - Engine is the sole authority
+        child->setRect(Rect(0, y, availableSpace.width, rowRect.size.height));
+        propagatePositionToChildren(child.get(), 0, y);
+
+        y += rowRect.size.height + borderWidth;
+    }
+
+    table->setRect(Rect(0, 0, availableSpace.width, y));
+}
+
+void LayoutEngine::layoutTableRow(LayoutObject* row, const std::vector<float>& columnWidths, const Size& availableSpace) {
+    float borderWidth = 1.0f;
+    float cellPadding = 8.0f;
+
+    float x = borderWidth;
+    float maxHeight = 0;
+
+    size_t colIndex = 0;
+    for (auto& child : row->getChildren()) {
+        if (colIndex >= columnWidths.size()) break;
+
+        float cellWidth = columnWidths[colIndex];
+
+        // Get cell alignment from source object
+        TableCellAlign alignment = TableCellAlign::Left;
+        if (TableCellLayoutObject* cellLayout = dynamic_cast<TableCellLayoutObject*>(child.get())) {
+            alignment = cellLayout->getAlignment();
+        }
+
+        // Engine lays out cell content with alignment
+        Size cellAvailable(cellWidth - cellPadding * 2, availableSpace.height);
+        layoutTableCell(child.get(), alignment, cellAvailable);
+
+        // Engine positions cell - sole authority
+        const Rect& cellRect = child->getRect();
+        child->setRect(Rect(x + cellPadding, cellPadding, cellWidth - cellPadding * 2, cellRect.size.height));
+
+        maxHeight = std::max(maxHeight, cellRect.size.height + cellPadding * 2);
+
+        x += cellWidth + borderWidth;
+        colIndex++;
+    }
+
+    row->setRect(Rect(0, 0, availableSpace.width, maxHeight));
+}
+
+void LayoutEngine::layoutTableCell(LayoutObject* cell, TableCellAlign alignment, const Size& availableSpace) {
+    float y = 0;
+
+    // Layout children (text content)
+    for (auto& child : cell->getChildren()) {
+        performLayout(child.get(), availableSpace);
+        const Rect& childRect = child->getRect();
+
+        // Engine handles alignment - sole authority
+        float childX = 0;
+        if (alignment == TableCellAlign::Center) {
+            childX = (availableSpace.width - childRect.size.width) / 2;
+        } else if (alignment == TableCellAlign::Right) {
+            childX = availableSpace.width - childRect.size.width;
+        }
+
+        // Engine positions content
+        child->setRect(Rect(childX, y, childRect.size.width, childRect.size.height));
+        y += childRect.size.height;
+    }
+
+    cell->setRect(Rect(0, 0, availableSpace.width, y));
+}
+
+void LayoutEngine::layoutListItem(LayoutObject* listItem, const Size& availableSpace) {
+    // Get indent level from source object
+    const ListItemObject* itemObj = static_cast<const ListItemObject*>(listItem->getSourceObject());
+    int indent = itemObj->getIndentLevel();
+    float indentWidth = Typography::LIST_INDENT * (indent + 1);  // +1 for base indent
+
+    float y = 0;
+    float contentWidth = availableSpace.width - indentWidth;
+
+    // Layout children (text content)
+    for (auto& child : listItem->getChildren()) {
+        Size childAvailable(contentWidth, availableSpace.height - y);
+        performLayout(child.get(), childAvailable);
+
+        const Rect& childRect = child->getRect();
+        // Engine positions content with indent - sole authority
+        child->setRect(Rect(indentWidth, y, childRect.size.width, childRect.size.height));
+
+        y += childRect.size.height;
+    }
+
+    listItem->setRect(Rect(0, 0, availableSpace.width, std::max(y, Typography::BASE_FONT_SIZE)));
 }
