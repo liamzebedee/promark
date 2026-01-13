@@ -1,3 +1,17 @@
+promark - a professional markdown editor
+========================================
+
+Promark is a professional markdown editor. It is the fastest Markdown editor ever - native app, C++ and OpenGL, no frameworks like electron, using OpenGL ES 2.0. 
+
+- Native performance, typographic beauty
+    - feels like using word, but you own your own data (.md) files
+    - written using native tech, not web electron crap. feels good, low on battery
+    - like sublime text for typographic markdown writing.
+
+It is inspired by Chrome's web browser architecture. One-way flow of data. 
+
+## V1 design (WIP).
+
 How does it work? 
 - Raw text buffer: raw markdown text
 - Parser -> object tree. Objects: heading, image, formatting (bold, italic, underline, link), block quote, code block, equations, lists
@@ -163,6 +177,7 @@ Architecture:
     - WebGL port
     - CLI version (mdedit <file>.md)
 
+## Future features.
 
 Future things:
 - OneNote-like layout
