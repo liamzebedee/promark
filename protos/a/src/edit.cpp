@@ -10,12 +10,11 @@ Engine* engine = nullptr;
 GLFWwindow* window = nullptr;
 std::string filePath;
 std::string fileName;
-std::string diskContent;  // Content as it exists on disk
 bool lastDirtyState = false;
 
 bool isDirty() {
     if (!engine) return false;
-    return engine->getContent() != diskContent;
+    return engine->isDirty();
 }
 
 void updateWindowTitle() {
@@ -44,7 +43,7 @@ bool saveFile() {
     file << content;
     file.close();
 
-    diskContent = content;  // Update disk content reference
+    engine->markClean();  // Mark buffer as saved
     updateWindowTitle();
     return true;
 }
@@ -303,8 +302,7 @@ int main(int argc, char* argv[]) {
 
     // Load file content
     std::string content = loadFile(filePath);
-    diskContent = content;  // Store what's on disk
-    engine->setContent(content);
+    engine->setContent(content);  // setContent() already marks buffer as clean
 
     updateWindowTitle();
 

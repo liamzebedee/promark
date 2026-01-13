@@ -250,11 +250,14 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/text_buffer.h`, `src/engine/text_buffer.cpp`
 
 ### P2-10: Remove Shell's diskContent Shadow Copy
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: P0-1
-- **Problem**: `edit.cpp:13` has `diskContent` string with O(n) comparison every frame (`edit.cpp:18, 319`)
-- **Required**: Use TextBuffer.isDirty() flag instead (dirty tracking is now handled by TextBuffer via isDirty() and markClean())
+- **Solution**: Replaced O(n) string comparison with TextBuffer's dirty flag:
+  - Removed `diskContent` global variable that duplicated entire file content
+  - Updated `isDirty()` to use `engine->isDirty()` instead of string comparison
+  - Updated `saveFile()` to call `engine->markClean()` instead of updating shadow copy
+  - Removed redundant initialization since `engine->setContent()` already marks buffer as clean
 - **Files**: `src/edit.cpp`
 
 ---
@@ -382,7 +385,7 @@ These groups can be worked on concurrently:
 | `glyph_atlas.cpp` | Standalone with GL calls (should be in backend) |
 | `batch_renderer.cpp` | Partial backend, missing clip/resource management |
 | `text_buffer.h/cpp` | Never-called insert/delete, no snapshots/versioning |
-| `edit.cpp` | Shadow diskContent, O(n) comparison |
+| `edit.cpp` | - |
 
 ---
 
