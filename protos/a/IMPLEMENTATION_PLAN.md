@@ -274,16 +274,22 @@ These must be resolved first as they block correct implementation of other featu
 - **Location**: `layout_objects.h:27`
 
 ### P3-3: Delete skipPropagate Flag
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: P0-4
-- **Location**: `layout_engine.cpp:198-199`
+- **Solution**: The skipPropagate flag was already deleted as part of P0-4 (commit 48e9700). The engine is now the sole coordinator for layout positioning with no special-case delegation needed.
+- **Location**: Was at `layout_engine.cpp:198-199`, now removed
 
 ### P3-4: Delete SetClipOp/RestoreClipOp
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: None
-- **Location**: `paint_operations.h:83-96` (exist but unused)
+- **Solution**: Removed all dead code related to SetClip/RestoreClip operations:
+  - Deleted `SetClip` and `RestoreClip` enum values from `PaintOpType`
+  - Deleted `SetClipOp` and `RestoreClipOp` class definitions and implementations
+  - Deleted `executeSetClip()` and `executeRestoreClip()` methods from Rasterizer
+  - Deleted unused `currentClip` and `hasClip` member variables from Rasterizer
+- **Location**: Was at `paint_operations.h:83-96`, now removed
 
 ### P3-5: Consolidate DrawDebugBorderOp, DrawSelectionRectOp, DrawCaretOp
 - **Status**: NOT STARTED
@@ -345,7 +351,7 @@ P1-3 (FontProvider) ──> P1-6 (Pre-shaped glyph data)
 These groups can be worked on concurrently:
 
 **Group A - Rendering Foundation:**
-- P0-3, P1-1, P1-7, P3-4
+- P0-3, P1-1, P1-7
 
 **Group B - Text Model Foundation:**
 - P0-1 → P0-2
@@ -369,8 +375,8 @@ These groups can be worked on concurrently:
 | `markdown_objects.h` | Unused Bold/Italic/Underline enums, annotation model |
 | `markdown_parser.cpp` | 6 stub methods, annotation model for inline formatting |
 | `layout_objects.cpp` | Split authority (4 objects self-position), I/O during layout |
-| `layout_engine.cpp` | skipPropagate flag, stub layoutInlineFlow() |
-| `paint_operations.h` | 4 rect types, flat DisplayList, unused clip ops |
+| `layout_engine.cpp` | stub layoutInlineFlow() |
+| `paint_operations.h` | 4 rect types, flat DisplayList |
 | `painter.cpp` | Queries upstream for MarkdownObjectType |
 | `rasterizer.cpp` | Direct GL calls, no culling |
 | `glyph_atlas.cpp` | Standalone with GL calls (should be in backend) |

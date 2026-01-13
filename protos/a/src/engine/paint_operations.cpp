@@ -64,17 +64,6 @@ const std::string& DrawImageOp::getImagePath() const {
     return imagePath;
 }
 
-SetClipOp::SetClipOp(const Rect& clipRect) 
-    : PaintOp(PaintOpType::SetClip), clipRect(clipRect) {
-}
-
-const Rect& SetClipOp::getClipRect() const {
-    return clipRect;
-}
-
-RestoreClipOp::RestoreClipOp() : PaintOp(PaintOpType::RestoreClip) {
-}
-
 DrawDebugBorderOp::DrawDebugBorderOp(const Rect& rect, const Color& color) 
     : PaintOp(PaintOpType::DrawDebugBorder), rect(rect), color(color) {
 }

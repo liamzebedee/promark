@@ -12,7 +12,7 @@
 #define STBI_ONLY_JPEG
 #include "stb/stb_image.h"
 
-Rasterizer::Rasterizer() : hasClip(false), faceRegular(nullptr), faceBold(nullptr),
+Rasterizer::Rasterizer() : faceRegular(nullptr), faceBold(nullptr),
     faceItalic(nullptr), faceBoldItalic(nullptr), faceMono(nullptr), fontLoaded(false),
     gl2Initialized(false) {
     initializeFont();
@@ -65,12 +65,6 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport,
                 break;
             case PaintOpType::DrawImage:
                 executeDrawImage(static_cast<const DrawImageOp&>(*op));
-                break;
-            case PaintOpType::SetClip:
-                executeSetClip(static_cast<const SetClipOp&>(*op));
-                break;
-            case PaintOpType::RestoreClip:
-                executeRestoreClip(static_cast<const RestoreClipOp&>(*op));
                 break;
             case PaintOpType::DrawDebugBorder:
                 executeDrawDebugBorder(static_cast<const DrawDebugBorderOp&>(*op));
@@ -141,22 +135,6 @@ void Rasterizer::executeDrawImage(const DrawImageOp& op) {
                                   rect.size.width, rect.size.height,
                                   imgData.textureId);
     }
-}
-
-void Rasterizer::executeSetClip(const SetClipOp& op) {
-    currentClip = op.getClipRect();
-    hasClip = true;
-    
-    // Use OpenGL scissor test for clipping
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(currentClip.position.x, currentClip.position.y, 
-              currentClip.size.width, currentClip.size.height);
-}
-
-void Rasterizer::executeRestoreClip(const RestoreClipOp& op) {
-    (void)op;  // Unused
-    hasClip = false;
-    glDisable(GL_SCISSOR_TEST);
 }
 
 void Rasterizer::loadImage(const std::string& imagePath) {

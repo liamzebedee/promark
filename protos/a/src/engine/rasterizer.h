@@ -28,8 +28,6 @@ private:
     void executeDrawRect(const DrawRectOp& op);
     void executeDrawText(const DrawTextOp& op);
     void executeDrawImage(const DrawImageOp& op);
-    void executeSetClip(const SetClipOp& op);
-    void executeRestoreClip(const RestoreClipOp& op);
     void executeDrawDebugBorder(const DrawDebugBorderOp& op);
     void executeDrawCaret(const DrawCaretOp& op);
     void executeDrawSelectionRect(const DrawSelectionRectOp& op);
@@ -44,9 +42,7 @@ private:
     bool decodeJpegFromMemory(const uint8_t* data, size_t length, ImageData& outData);
 
     std::map<std::string, ImageData> imageCache;
-    Rect currentClip;
-    bool hasClip;
-    
+
     // FreeType font system
     FT_Library ft;
     FT_Face faceRegular;

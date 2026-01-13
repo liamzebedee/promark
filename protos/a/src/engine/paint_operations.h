@@ -15,8 +15,6 @@ enum class PaintOpType {
     DrawRect,
     DrawText,
     DrawImage,
-    SetClip,
-    RestoreClip,
     DrawDebugBorder,
     DrawCaret,
     DrawSelectionRect,
@@ -78,21 +76,6 @@ public:
 private:
     Rect destRect;
     std::string imagePath;
-};
-
-class SetClipOp : public PaintOp {
-public:
-    SetClipOp(const Rect& clipRect);
-    
-    const Rect& getClipRect() const;
-    
-private:
-    Rect clipRect;
-};
-
-class RestoreClipOp : public PaintOp {
-public:
-    RestoreClipOp();
 };
 
 class DrawDebugBorderOp : public PaintOp {
