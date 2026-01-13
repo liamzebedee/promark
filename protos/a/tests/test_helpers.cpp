@@ -3,9 +3,22 @@
 #include <cstdlib>
 #include <cstring>
 #include <sys/stat.h>
+#include <random>
+#include <sstream>
+#include <iomanip>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "../vendor/glfw-3.4/deps/stb_image_write.h"
+
+// Generate a unique session ID (8 hex chars)
+static std::string generateSessionId() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<uint32_t> dist(0, 0xFFFFFFFF);
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0') << std::setw(8) << dist(gen);
+    return ss.str();
+}
 
 // TestContext implementation
 
@@ -16,7 +29,8 @@ TestContext::TestContext(int width, int height)
     , engine(nullptr)
     , framebuffer(0)
     , colorTexture(0)
-    , depthRenderbuffer(0) {
+    , depthRenderbuffer(0)
+    , sessionId(generateSessionId()) {
     // Use environment variable for output directory, default to /tmp
     const char* envDir = std::getenv("TEST_OUTPUT_DIR");
     outputDir = envDir ? envDir : "/tmp/promark_tests";
@@ -155,8 +169,8 @@ std::string TestContext::captureScreenshot(const std::string& testName, int scre
                width * 4);
     }
 
-    // Generate filename
-    std::string filename = outputDir + "/" + testName;
+    // Generate filename with session ID for parallel test support
+    std::string filename = outputDir + "/" + testName + "_" + sessionId;
     if (screenshotIndex > 0) {
         filename += "_" + std::to_string(screenshotIndex);
     }
@@ -214,6 +228,7 @@ int TestRunner::runAll() {
             continue;
         }
 
+        std::cout << "SESSION: " << ctx.getSessionId() << "\n";
         TestResult result = test.func(ctx);
 
         if (result.passed) {
@@ -243,6 +258,7 @@ int TestRunner::runTest(const std::string& name) {
                 return 1;
             }
 
+            std::cout << "SESSION: " << ctx.getSessionId() << "\n";
             TestResult result = test.func(ctx);
 
             if (result.passed) {

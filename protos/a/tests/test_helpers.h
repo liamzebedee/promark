@@ -36,6 +36,9 @@ public:
     int getWidth() const { return width; }
     int getHeight() const { return height; }
 
+    // Get unique session ID for this test run
+    const std::string& getSessionId() const { return sessionId; }
+
 private:
     int width;
     int height;
@@ -45,6 +48,7 @@ private:
     GLuint colorTexture;
     GLuint depthRenderbuffer;
     std::string outputDir;
+    std::string sessionId;
 
     bool setupFramebuffer();
     void bindFramebuffer();
