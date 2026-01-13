@@ -1,10 +1,6 @@
 #include "engine.h"
 #include "typography.h"
-#ifdef __EMSCRIPTEN__
-#include <GLES2/gl2.h>
-#else
-#include <OpenGL/gl.h>
-#endif
+#include "gl_includes.h"
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <cstring>
@@ -60,18 +56,16 @@ bool Engine::initialize() {
     }
 
 #ifdef __EMSCRIPTEN__
-    // Load embedded fonts for web build
-    const char* fontPaths[] = {
-        "/fonts/NotoSans-Regular.ttf"
-    };
-#else
-    // Try to load system font (Helvetica or Arial)
+    const char* fontPaths[] = { "/fonts/NotoSans-Regular.ttf" };
+#elif defined(__APPLE__)
     const char* fontPaths[] = {
         "/System/Library/Fonts/Helvetica.ttc",
         "/System/Library/Fonts/Arial.ttf",
-        "/Library/Fonts/Arial.ttf",
-        "/System/Library/Fonts/Times.ttc" // fallback
+        "/Library/Fonts/Arial.ttf"
     };
+#else
+    // Linux: bundled fonts
+    const char* fontPaths[] = { "fonts/NotoSans-Regular.ttf" };
 #endif
 
     bool fontLoadedSuccessfully = false;
@@ -89,18 +83,15 @@ bool Engine::initialize() {
     }
 
 #ifdef __EMSCRIPTEN__
-    // Load embedded monospace font for web build
-    const char* monoFontPaths[] = {
-        "/fonts/NotoSansMono-Regular.ttf"
-    };
-#else
-    // Load monospace font for code blocks
+    const char* monoFontPaths[] = { "/fonts/NotoSansMono-Regular.ttf" };
+#elif defined(__APPLE__)
     const char* monoFontPaths[] = {
         "/System/Library/Fonts/Menlo.ttc",
         "/System/Library/Fonts/Monaco.dfont",
-        "/System/Library/Fonts/Courier.dfont",
         "/Library/Fonts/Courier New.ttf"
     };
+#else
+    const char* monoFontPaths[] = { "fonts/NotoSansMono-Regular.ttf" };
 #endif
 
     monoFace = nullptr;
@@ -577,6 +568,14 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                 selectionStart = cursorPos;
                 selectionEnd = cursorPos;
                 hasSelection = false;
+            }
+
+            // Snap caret animation to new position immediately (don't animate on click)
+            if (markdownRenderer) {
+                int domPos = markdownRenderer->rawToDOM(cursorPos);
+                markdownRenderer->getCursorXY(domPos, caretTargetX, caretTargetY);
+                caretAnimX = caretTargetX;
+                caretAnimY = caretTargetY;
             }
 
             lastClickTime = currentTime;

@@ -374,7 +374,9 @@ const std::vector<TextLayoutObject::LineInfo>& TextLayoutObject::getLines() cons
 
 int TextLayoutObject::getLineForChar(int charIndex) const {
     for (size_t i = 0; i < lines.size(); i++) {
-        if (charIndex >= lines[i].startChar && charIndex < lines[i].endChar) {
+        // Use <= for endChar to handle positions at line boundaries correctly
+        // Position at endChar belongs to this line, not the next
+        if (charIndex >= lines[i].startChar && charIndex <= lines[i].endChar) {
             return i;
         }
     }

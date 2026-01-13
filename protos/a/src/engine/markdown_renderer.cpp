@@ -370,16 +370,29 @@ float MarkdownRenderer::getCursorY(int domPos) const {
             // Found the layout containing this position
             const Rect& rect = layout->getRect();
             float fontSize = layout->getFontSize();
-            float lineHeight = fontSize;
-            return rect.position.y + lineHeight;  // Return bottom of line
+            int localOffset = domPos - layoutDOMPos;
+
+            // Find the correct line for this position
+            const auto& lines = layout->getLines();
+            if (!lines.empty() && localOffset >= 0) {
+                int lineIdx = layout->getLineForChar(localOffset);
+                const auto& line = lines[lineIdx];
+                return rect.position.y + line.yOffset + fontSize;  // Bottom of the correct line
+            }
+            return rect.position.y + fontSize;  // Fallback to first line
         }
     }
 
     // If not found, return bottom of last layout
     if (!textLayouts.empty()) {
         const auto& [layout, layoutDOMPos] = textLayouts.back();
+        (void)layoutDOMPos;
         const Rect& rect = layout->getRect();
+        const auto& lines = layout->getLines();
         float fontSize = layout->getFontSize();
+        if (!lines.empty()) {
+            return rect.position.y + lines.back().yOffset + fontSize;
+        }
         return rect.position.y + fontSize;
     }
 
