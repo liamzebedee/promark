@@ -9,9 +9,22 @@
 #include "batch_renderer.h"
 #include "glyph_atlas.h"
 
-struct UndoState {
-    std::string text;
-    int cursorPos;
+// Operation-based undo/redo system
+// Stores the actual operation performed, enabling efficient undo/redo
+// without storing full document copies
+enum class TextOpType { Insert, Delete, Replace };
+
+struct TextOperation {
+    TextOpType type;
+    size_t position;
+    std::string insertedText;  // Text that was inserted (Insert/Replace)
+    std::string deletedText;   // Text that was deleted (Delete/Replace)
+};
+
+struct UndoEntry {
+    TextOperation operation;
+    int caretPositionBefore;
+    float scrollPositionBefore;
 };
 
 class Engine {
@@ -96,11 +109,15 @@ private:
     // URL handling
     void openUrl(const std::string& url);
 
-    // Undo system
-    std::vector<UndoState> undoStack;
+    // Operation-based undo/redo system
+    std::vector<UndoEntry> undoStack;
+    std::vector<UndoEntry> redoStack;
     static const int MAX_UNDO = 100;
-    void saveUndoState();
+    void recordInsert(size_t position, const std::string& text);
+    void recordDelete(size_t position, const std::string& deletedText);
+    void recordReplace(size_t position, const std::string& deletedText, const std::string& insertedText);
     void undo();
+    void redo();
 
     // Toolbar
     static const int TOOLBAR_HEIGHT = 40;

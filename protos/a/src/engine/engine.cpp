@@ -240,7 +240,14 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 paste();
                 return;
             } else if (key == GLFW_KEY_Z) {
-                undo();
+                if (shift) {
+                    redo();  // Ctrl/Cmd+Shift+Z = Redo
+                } else {
+                    undo();  // Ctrl/Cmd+Z = Undo
+                }
+                return;
+            } else if (key == GLFW_KEY_Y) {
+                redo();  // Ctrl/Cmd+Y = Redo (alternative shortcut)
                 return;
             } else if (key == GLFW_KEY_R) {
                 // Get cursor's current screen Y position before toggle
@@ -348,24 +355,28 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
         } else if (key == GLFW_KEY_BACKSPACE) {
             if (hasSelection) {
                 // Delete selection
-                saveUndoState();
                 int start = std::min(selectionStart, selectionEnd);
                 int end = std::max(selectionStart, selectionEnd);
+                std::string deletedText = textBuffer->getText().substr(start, end - start);
+                recordDelete(start, deletedText);
                 textBuffer->deleteText(start, end - start);
                 cursorPos = start;
                 goalColumn = getColumnInLine(cursorPos);
                 hasSelection = false;
             } else if (cmdOrCtrl && cursorPos > 0) {
                 // Cmd/Ctrl+Backspace: delete to start of line
-                saveUndoState();
                 int lineStart = findLineStart(cursorPos);
                 if (lineStart < cursorPos) {
                     // Delete from cursor to start of line
                     int deleteCount = cursorPos - lineStart;
+                    std::string deletedText = textBuffer->getText().substr(lineStart, deleteCount);
+                    recordDelete(lineStart, deletedText);
                     textBuffer->deleteText(lineStart, deleteCount);
                     cursorPos = lineStart;
                 } else if (cursorPos > 0) {
                     // Already at start of line - delete the newline to merge with previous line
+                    std::string deletedText(1, textBuffer->charAt(cursorPos - 1));
+                    recordDelete(cursorPos - 1, deletedText);
                     textBuffer->deleteText(cursorPos - 1, 1);
                     cursorPos--;
                 }
@@ -381,14 +392,16 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
             int inputLength = static_cast<int>(textBuffer->getLength());
             if (hasSelection) {
                 // Delete selection
-                saveUndoState();
                 int start = std::min(selectionStart, selectionEnd);
                 int end = std::max(selectionStart, selectionEnd);
+                std::string deletedText = textBuffer->getText().substr(start, end - start);
+                recordDelete(start, deletedText);
                 textBuffer->deleteText(start, end - start);
                 cursorPos = start;
                 hasSelection = false;
             } else if (cursorPos < inputLength) {
-                saveUndoState();
+                std::string deletedText(1, textBuffer->charAt(cursorPos));
+                recordDelete(cursorPos, deletedText);
                 textBuffer->deleteText(cursorPos, 1);
             }
             
@@ -668,18 +681,19 @@ int Engine::findWordBoundary(int pos, int direction) {
 }
 
 void Engine::insertChar(char c) {
-    saveUndoState();
+    std::string s(1, c);
 
     if (hasSelection) {
         // Replace selection
         int start = std::min(selectionStart, selectionEnd);
         int end = std::max(selectionStart, selectionEnd);
-        std::string s(1, c);
+        std::string deletedText = textBuffer->getText().substr(start, end - start);
+        recordReplace(start, deletedText, s);
         textBuffer->replaceText(start, end - start, s);
         cursorPos = start + 1;
         hasSelection = false;
     } else {
-        std::string s(1, c);
+        recordInsert(cursorPos, s);
         textBuffer->insertText(cursorPos, s);
         cursorPos++;
     }
@@ -695,16 +709,17 @@ void Engine::insertChar(char c) {
 void Engine::insertText(const std::string& text) {
     if (text.empty()) return;
 
-    saveUndoState();
-
     if (hasSelection) {
         // Replace selection
         int start = std::min(selectionStart, selectionEnd);
         int end = std::max(selectionStart, selectionEnd);
+        std::string deletedText = textBuffer->getText().substr(start, end - start);
+        recordReplace(start, deletedText, text);
         textBuffer->replaceText(start, end - start, text);
         cursorPos = start + static_cast<int>(text.length());
         hasSelection = false;
     } else {
+        recordInsert(cursorPos, text);
         textBuffer->insertText(cursorPos, text);
         cursorPos += static_cast<int>(text.length());
     }
@@ -718,9 +733,9 @@ void Engine::insertText(const std::string& text) {
 }
 
 void Engine::deleteChar() {
-    saveUndoState();
-
     if (cursorPos > 0) {
+        std::string deletedText(1, textBuffer->charAt(cursorPos - 1));
+        recordDelete(cursorPos - 1, deletedText);
         textBuffer->deleteText(cursorPos - 1, 1);
         cursorPos--;
         goalColumn = getColumnInLine(cursorPos);
@@ -728,13 +743,13 @@ void Engine::deleteChar() {
 }
 
 void Engine::deleteWordBackward() {
-    saveUndoState();
-
     if (cursorPos > 0) {
         int wordStart = findWordBoundary(cursorPos, -1);
         int deleteCount = cursorPos - wordStart;
 
         if (deleteCount > 0) {
+            std::string deletedText = textBuffer->getText().substr(wordStart, deleteCount);
+            recordDelete(wordStart, deletedText);
             textBuffer->deleteText(wordStart, deleteCount);
             cursorPos = wordStart;
             goalColumn = getColumnInLine(cursorPos);
@@ -833,17 +848,18 @@ void Engine::paste() {
         return;
     }
 
-    saveUndoState();
-
     if (hasSelection) {
         // Replace selection with clipboard text
         int start = std::min(selectionStart, selectionEnd);
         int end = std::max(selectionStart, selectionEnd);
+        std::string deletedText = textBuffer->getText().substr(start, end - start);
+        recordReplace(start, deletedText, clipboardText);
         textBuffer->replaceText(start, end - start, clipboardText);
         cursorPos = start + static_cast<int>(clipboardText.length());
         hasSelection = false;
     } else {
         // Insert clipboard text at cursor
+        recordInsert(cursorPos, clipboardText);
         textBuffer->insertText(cursorPos, clipboardText);
         cursorPos += static_cast<int>(clipboardText.length());
     }
@@ -891,14 +907,50 @@ void Engine::updateCaretAnimation() {
     if (std::abs(caretTargetY - caretAnimY) < 0.5f) caretAnimY = caretTargetY;
 }
 
-void Engine::saveUndoState() {
-    UndoState state;
-    state.text = textBuffer->getText();
-    state.cursorPos = cursorPos;
+void Engine::recordInsert(size_t position, const std::string& text) {
+    UndoEntry entry;
+    entry.operation.type = TextOpType::Insert;
+    entry.operation.position = position;
+    entry.operation.insertedText = text;
+    entry.caretPositionBefore = cursorPos;
+    entry.scrollPositionBefore = scrollOffset;
 
-    undoStack.push_back(state);
+    undoStack.push_back(entry);
+    redoStack.clear();  // Clear redo stack on new operation
 
-    // Limit undo stack size
+    if (undoStack.size() > MAX_UNDO) {
+        undoStack.erase(undoStack.begin());
+    }
+}
+
+void Engine::recordDelete(size_t position, const std::string& deletedText) {
+    UndoEntry entry;
+    entry.operation.type = TextOpType::Delete;
+    entry.operation.position = position;
+    entry.operation.deletedText = deletedText;
+    entry.caretPositionBefore = cursorPos;
+    entry.scrollPositionBefore = scrollOffset;
+
+    undoStack.push_back(entry);
+    redoStack.clear();
+
+    if (undoStack.size() > MAX_UNDO) {
+        undoStack.erase(undoStack.begin());
+    }
+}
+
+void Engine::recordReplace(size_t position, const std::string& deletedText, const std::string& insertedText) {
+    UndoEntry entry;
+    entry.operation.type = TextOpType::Replace;
+    entry.operation.position = position;
+    entry.operation.deletedText = deletedText;
+    entry.operation.insertedText = insertedText;
+    entry.caretPositionBefore = cursorPos;
+    entry.scrollPositionBefore = scrollOffset;
+
+    undoStack.push_back(entry);
+    redoStack.clear();
+
     if (undoStack.size() > MAX_UNDO) {
         undoStack.erase(undoStack.begin());
     }
@@ -911,6 +963,7 @@ void Engine::setContent(const std::string& content) {
     goalColumn = 0;
     hasSelection = false;
     undoStack.clear();
+    redoStack.clear();
 }
 
 std::string Engine::getContent() const {
@@ -927,13 +980,78 @@ std::string Engine::getSelectedText() const {
 void Engine::undo() {
     if (undoStack.empty()) return;
 
-    UndoState state = undoStack.back();
+    UndoEntry entry = undoStack.back();
     undoStack.pop_back();
 
-    // Restore state
-    textBuffer->setText(state.text);
+    // Create redo entry (captures current state before undo)
+    UndoEntry redoEntry;
+    redoEntry.operation = entry.operation;
+    redoEntry.caretPositionBefore = cursorPos;
+    redoEntry.scrollPositionBefore = scrollOffset;
+    redoStack.push_back(redoEntry);
+
+    // Invert the operation
+    const TextOperation& op = entry.operation;
+    switch (op.type) {
+        case TextOpType::Insert:
+            // Undo insert = delete the inserted text
+            textBuffer->deleteText(op.position, op.insertedText.length());
+            break;
+        case TextOpType::Delete:
+            // Undo delete = insert the deleted text back
+            textBuffer->insertText(op.position, op.deletedText);
+            break;
+        case TextOpType::Replace:
+            // Undo replace = replace inserted text with deleted text
+            textBuffer->replaceText(op.position, op.insertedText.length(), op.deletedText);
+            break;
+    }
+
+    // Restore caret and scroll position
     int inputLength = static_cast<int>(textBuffer->getLength());
-    cursorPos = std::min(state.cursorPos, inputLength);
+    cursorPos = std::min(entry.caretPositionBefore, inputLength);
+    scrollOffset = entry.scrollPositionBefore;
+    goalColumn = getColumnInLine(cursorPos);
+    hasSelection = false;
+
+    // Reset blink
+    lastBlinkTime = glfwGetTime();
+    caretVisible = true;
+}
+
+void Engine::redo() {
+    if (redoStack.empty()) return;
+
+    UndoEntry entry = redoStack.back();
+    redoStack.pop_back();
+
+    // Create undo entry (captures current state before redo)
+    UndoEntry undoEntry;
+    undoEntry.operation = entry.operation;
+    undoEntry.caretPositionBefore = cursorPos;
+    undoEntry.scrollPositionBefore = scrollOffset;
+    undoStack.push_back(undoEntry);
+
+    // Re-apply the operation
+    const TextOperation& op = entry.operation;
+    switch (op.type) {
+        case TextOpType::Insert:
+            // Redo insert = insert the text again
+            textBuffer->insertText(op.position, op.insertedText);
+            cursorPos = static_cast<int>(op.position + op.insertedText.length());
+            break;
+        case TextOpType::Delete:
+            // Redo delete = delete the text again
+            textBuffer->deleteText(op.position, op.deletedText.length());
+            cursorPos = static_cast<int>(op.position);
+            break;
+        case TextOpType::Replace:
+            // Redo replace = replace deleted text with inserted text
+            textBuffer->replaceText(op.position, op.deletedText.length(), op.insertedText);
+            cursorPos = static_cast<int>(op.position + op.insertedText.length());
+            break;
+    }
+
     goalColumn = getColumnInLine(cursorPos);
     hasSelection = false;
 
@@ -1515,8 +1633,6 @@ bool Engine::handleToolbarClick(double x, double y) {
 void Engine::wrapSelection(const std::string& before, const std::string& after) {
     if (!hasSelection) return;
 
-    saveUndoState();
-
     int start = std::min(selectionStart, selectionEnd);
     int end = std::max(selectionStart, selectionEnd);
     int selLen = end - start;
@@ -1524,6 +1640,9 @@ void Engine::wrapSelection(const std::string& before, const std::string& after) 
     // Get selected text and wrap it
     std::string selectedText = textBuffer->getText().substr(start, selLen);
     std::string wrapped = before + selectedText + after;
+
+    // Record the replace operation
+    recordReplace(start, selectedText, wrapped);
 
     // Replace selection with wrapped text
     textBuffer->replaceText(start, selLen, wrapped);
@@ -1539,7 +1658,7 @@ void Engine::applyBold() {
         wrapSelection("**", "**");
     } else {
         // Insert ** markers and place cursor between them
-        saveUndoState();
+        recordInsert(cursorPos, "****");
         textBuffer->insertText(cursorPos, "****");
         cursorPos += 2;  // Place cursor between ** markers
     }
@@ -1550,15 +1669,13 @@ void Engine::applyItalic() {
         wrapSelection("*", "*");
     } else {
         // Insert * markers and place cursor between them
-        saveUndoState();
+        recordInsert(cursorPos, "**");
         textBuffer->insertText(cursorPos, "**");
         cursorPos += 1;  // Place cursor between * markers
     }
 }
 
 void Engine::applyHeading(int level) {
-    saveUndoState();
-
     // Find start of current line - use selection start if there's a selection
     int targetPos = hasSelection ? std::min(selectionStart, selectionEnd) : cursorPos;
     int lineStart = findLineStart(targetPos);
@@ -1567,7 +1684,7 @@ void Engine::applyHeading(int level) {
     std::string prefix(level, '#');
     prefix += " ";
 
-    // Check if line already has heading markers - remove them first
+    // Check if line already has heading markers
     int inputLength = static_cast<int>(textBuffer->getLength());
     int existingLevel = 0;
     int pos = lineStart;
@@ -1579,15 +1696,21 @@ void Engine::applyHeading(int level) {
         pos++;  // Include space after #
     }
 
-    if (existingLevel > 0) {
-        // Remove existing heading prefix
-        int removeLen = pos - lineStart;
-        textBuffer->deleteText(lineStart, removeLen);
-        cursorPos -= removeLen;
+    // Get the old prefix to replace
+    std::string oldPrefix = textBuffer->getText().substr(lineStart, pos - lineStart);
+
+    // Record as a single Replace operation
+    if (!oldPrefix.empty() || !prefix.empty()) {
+        recordReplace(lineStart, oldPrefix, prefix);
+    }
+
+    // Perform the actual replacement
+    if (!oldPrefix.empty()) {
+        textBuffer->deleteText(lineStart, oldPrefix.length());
+        cursorPos -= static_cast<int>(oldPrefix.length());
         if (cursorPos < lineStart) cursorPos = lineStart;
     }
 
-    // Insert new heading prefix at line start
     textBuffer->insertText(lineStart, prefix);
     cursorPos += static_cast<int>(prefix.length());
 
@@ -1602,10 +1725,9 @@ void Engine::applyLink() {
         int selLen = end - start;
         std::string selectedText = textBuffer->getText().substr(start, selLen);
 
-        saveUndoState();
-
         // Build link syntax: [selected text](url)
         std::string wrapped = "[" + selectedText + "](url)";
+        recordReplace(start, selectedText, wrapped);
         textBuffer->replaceText(start, selLen, wrapped);
 
         // Position cursor to select "url" placeholder
@@ -1616,8 +1738,8 @@ void Engine::applyLink() {
         hasSelection = true;
     } else {
         // Insert link template
-        saveUndoState();
         std::string linkTemplate = "[text](url)";
+        recordInsert(cursorPos, linkTemplate);
         textBuffer->insertText(cursorPos, linkTemplate);
 
         // Select "text" placeholder

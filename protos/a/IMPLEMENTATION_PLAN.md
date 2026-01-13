@@ -130,14 +130,19 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: All headers listed above
 
 ### P1-4: Implement Operation-Based Undo/Redo
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: P0-1
-- **Problem**:
-  - `UndoState` only stores text + cursor (`engine.h:12-15`)
-  - No operations recorded, just full text copies
-  - No scroll position stored
-  - No redo support
+- **Solution**: Implemented full operation-based undo/redo system:
+  - Created `TextOpType` enum (Insert, Delete, Replace)
+  - Created `TextOperation` struct with position, insertedText, deletedText
+  - Created `UndoEntry` struct with operation, caretPositionBefore, scrollPositionBefore
+  - Added `redoStack` and `redo()` method
+  - Implemented `recordInsert()`, `recordDelete()`, `recordReplace()` to record operations
+  - Updated all text mutation sites (17 locations) to use operation recording
+  - Added keyboard shortcuts: Ctrl+Shift+Z and Ctrl/Cmd+Y for redo
+  - Undo now restores both caret and scroll position
+  - All 12 tests pass
 - **Spec Reference**: `specs/05-text-buffer.md` - operation-based undo
 - **Files**: `src/engine/engine.h`, `src/engine/engine.cpp`
 
@@ -402,4 +407,4 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P1-1 (Unified DrawRect with RectRole) and P3-5 (Consolidate rect ops) completed*
+*Last updated: 2026-01-14 - P1-4 (Operation-Based Undo/Redo) completed with full redo support and scroll position restoration*
