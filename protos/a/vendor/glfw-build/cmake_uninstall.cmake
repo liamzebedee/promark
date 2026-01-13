@@ -1,22 +1,22 @@
 
-if (NOT EXISTS "/Users/liamz/Documents/Ongoing projects/mdeditor/protos/a/glfw-build/install_manifest.txt")
-    message(FATAL_ERROR "Cannot find install manifest: \"/Users/liamz/Documents/Ongoing projects/mdeditor/protos/a/glfw-build/install_manifest.txt\"")
+if (NOT EXISTS "/home/liam/Documents/projects/promark/protos/a/vendor/glfw-build/install_manifest.txt")
+    message(FATAL_ERROR "Cannot find install manifest: \"/home/liam/Documents/projects/promark/protos/a/vendor/glfw-build/install_manifest.txt\"")
 endif()
 
-file(READ "/Users/liamz/Documents/Ongoing projects/mdeditor/protos/a/glfw-build/install_manifest.txt" files)
+file(READ "/home/liam/Documents/projects/promark/protos/a/vendor/glfw-build/install_manifest.txt" files)
 string(REGEX REPLACE "\n" ";" files "${files}")
 
 foreach (file ${files})
   message(STATUS "Uninstalling \"$ENV{DESTDIR}${file}\"")
   if (EXISTS "$ENV{DESTDIR}${file}")
-    exec_program("/Users/liamz/Documents/Ongoing projects/mdeditor/protos/a/cmake/CMake.app/Contents/bin/cmake" ARGS "-E remove \"$ENV{DESTDIR}${file}\""
+    exec_program("/usr/bin/cmake" ARGS "-E remove \"$ENV{DESTDIR}${file}\""
                  OUTPUT_VARIABLE rm_out
                  RETURN_VALUE rm_retval)
     if (NOT "${rm_retval}" STREQUAL 0)
       MESSAGE(FATAL_ERROR "Problem when removing \"$ENV{DESTDIR}${file}\"")
     endif()
   elseif (IS_SYMLINK "$ENV{DESTDIR}${file}")
-    EXEC_PROGRAM("/Users/liamz/Documents/Ongoing projects/mdeditor/protos/a/cmake/CMake.app/Contents/bin/cmake" ARGS "-E remove \"$ENV{DESTDIR}${file}\""
+    EXEC_PROGRAM("/usr/bin/cmake" ARGS "-E remove \"$ENV{DESTDIR}${file}\""
                  OUTPUT_VARIABLE rm_out
                  RETURN_VALUE rm_retval)
     if (NOT "${rm_retval}" STREQUAL 0)

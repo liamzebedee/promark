@@ -1,9 +1,5 @@
 #include "glyph_atlas.h"
-#ifdef __EMSCRIPTEN__
-#include <GLES2/gl2.h>
-#else
-#include <OpenGL/gl.h>
-#endif
+#include "gl_includes.h"
 #include <cstring>
 
 GlyphAtlas::GlyphAtlas(int width, int height)

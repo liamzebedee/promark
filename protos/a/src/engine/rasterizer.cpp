@@ -1,10 +1,6 @@
 #include "rasterizer.h"
 #include "utf8.h"
-#ifdef __EMSCRIPTEN__
-#include <GLES2/gl2.h>
-#else
-#include <OpenGL/gl.h>
-#endif
+#include "gl_includes.h"
 #include <map>
 #include <iostream>
 #include <cmath>
@@ -350,18 +346,16 @@ bool Rasterizer::initializeFont() {
     }
 
 #ifdef __EMSCRIPTEN__
-    // Load embedded fonts for web build
-    const char* fontPaths[] = {
-        "/fonts/NotoSans-Regular.ttf"
-    };
-#else
-    // Try to load system fonts (TTC files have multiple faces)
+    const char* fontPaths[] = { "/fonts/NotoSans-Regular.ttf" };
+#elif defined(__APPLE__)
     const char* fontPaths[] = {
         "/System/Library/Fonts/Helvetica.ttc",
         "/System/Library/Fonts/Arial.ttf",
-        "/Library/Fonts/Arial.ttf",
-        "/System/Library/Fonts/Times.ttc"
+        "/Library/Fonts/Arial.ttf"
     };
+#else
+    // Linux: bundled fonts
+    const char* fontPaths[] = { "fonts/NotoSans-Regular.ttf" };
 #endif
 
     for (const char* fontPath : fontPaths) {
@@ -389,26 +383,22 @@ bool Rasterizer::loadFontFamily(const char* fontPath) {
     }
 
 #ifdef __EMSCRIPTEN__
-    // Load separate font files for web build
     loadFont("/fonts/NotoSans-Bold.ttf", 0, &faceBold);
     loadFont("/fonts/NotoSans-Italic.ttf", 0, &faceItalic);
     loadFont("/fonts/NotoSans-BoldItalic.ttf", 0, &faceBoldItalic);
-#else
-    // For TTC files, try to load bold (index 1), italic (index 2), bold-italic (index 3)
-    // If they fail, we'll use synthetic styles
+#elif defined(__APPLE__)
+    // For TTC files, load bold/italic from different face indices
     std::string path(fontPath);
-    bool isTTC = (path.length() > 4 && path.substr(path.length() - 4) == ".ttc");
-
-    if (isTTC) {
-        // Helvetica.ttc face indices:
-        // 0 = Helvetica
-        // 1 = Helvetica Bold
-        // 2 = Helvetica Oblique
-        // 3 = Helvetica Bold Oblique
+    if (path.length() > 4 && path.substr(path.length() - 4) == ".ttc") {
         loadFont(fontPath, 1, &faceBold);
         loadFont(fontPath, 2, &faceItalic);
         loadFont(fontPath, 3, &faceBoldItalic);
     }
+#else
+    // Linux: load separate bundled font files
+    loadFont("fonts/NotoSans-Bold.ttf", 0, &faceBold);
+    loadFont("fonts/NotoSans-Italic.ttf", 0, &faceItalic);
+    loadFont("fonts/NotoSans-BoldItalic.ttf", 0, &faceBoldItalic);
 #endif
 
     // Fallback: if bold/italic not loaded, use regular for all
@@ -422,16 +412,15 @@ bool Rasterizer::loadFontFamily(const char* fontPath) {
 
 bool Rasterizer::loadMonoFont() {
 #ifdef __EMSCRIPTEN__
-    const char* monoFontPaths[] = {
-        "/fonts/NotoSansMono-Regular.ttf"
-    };
-#else
+    const char* monoFontPaths[] = { "/fonts/NotoSansMono-Regular.ttf" };
+#elif defined(__APPLE__)
     const char* monoFontPaths[] = {
         "/System/Library/Fonts/Menlo.ttc",
         "/System/Library/Fonts/Monaco.dfont",
-        "/System/Library/Fonts/Courier.dfont",
         "/Library/Fonts/Courier New.ttf"
     };
+#else
+    const char* monoFontPaths[] = { "fonts/NotoSansMono-Regular.ttf" };
 #endif
 
     for (const char* monoPath : monoFontPaths) {

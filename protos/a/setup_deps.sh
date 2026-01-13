@@ -10,30 +10,57 @@ FREETYPE_SOURCE_DIR="$VENDOR_DIR/freetype"
 FREETYPE_BUILD_DIR="$VENDOR_DIR/freetype-build"
 HARFBUZZ_SOURCE_DIR="$VENDOR_DIR/harfbuzz"
 HARFBUZZ_BUILD_DIR="$VENDOR_DIR/harfbuzz-build"
+LIBJPEG_SOURCE_DIR="$VENDOR_DIR/libjpeg-turbo"
+LIBJPEG_BUILD_DIR="$VENDOR_DIR/libjpeg-turbo-build"
 CMAKE_DIR="$VENDOR_DIR/cmake"
-CMAKE_BIN="$CMAKE_DIR/CMake.app/Contents/bin/cmake"
 
-echo "Setting up text rendering dependencies..."
+# Platform detection
+OS="$(uname -s)"
+case "$OS" in
+    Darwin)
+        CMAKE_BIN="$CMAKE_DIR/CMake.app/Contents/bin/cmake"
+        NPROC="sysctl -n hw.ncpu"
+        ;;
+    Linux)
+        CMAKE_BIN="$CMAKE_DIR/bin/cmake"
+        NPROC="nproc"
+        ;;
+    *)
+        echo "Unsupported OS: $OS"
+        exit 1
+        ;;
+esac
+
+echo "Setting up text rendering dependencies on $OS..."
 echo "GLFW source: $GLFW_SOURCE_DIR"
 echo "GLFW build: $GLFW_BUILD_DIR"
 echo "FreeType source: $FREETYPE_SOURCE_DIR"
 echo "FreeType build: $FREETYPE_BUILD_DIR"
 echo "HarfBuzz source: $HARFBUZZ_SOURCE_DIR"
 echo "HarfBuzz build: $HARFBUZZ_BUILD_DIR"
+echo "libjpeg-turbo source: $LIBJPEG_SOURCE_DIR"
+echo "libjpeg-turbo build: $LIBJPEG_BUILD_DIR"
 
 # Check for cmake and download if needed
 if ! command -v cmake &> /dev/null && [ ! -f "$CMAKE_BIN" ]; then
-    echo "Downloading cmake binary for macOS..."
+    echo "Downloading cmake binary for $OS..."
     mkdir -p "$CMAKE_DIR"
     cd "$CMAKE_DIR"
-    
+
     CMAKE_VERSION="3.28.3"
-    CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-macos-universal.tar.gz"
-    
+    case "$OS" in
+        Darwin)
+            CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-macos-universal.tar.gz"
+            ;;
+        Linux)
+            CMAKE_URL="https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+            ;;
+    esac
+
     curl -L "$CMAKE_URL" -o cmake.tar.gz
     tar -xzf cmake.tar.gz --strip-components=1
     rm cmake.tar.gz
-    
+
     echo "CMake downloaded and extracted to $CMAKE_DIR"
 fi
 
@@ -60,13 +87,20 @@ if [ ! -d "$HARFBUZZ_SOURCE_DIR" ]; then
     exit 1
 fi
 
-# Create build directory
-mkdir -p "$GLFW_BUILD_DIR"
+if [ ! -d "$LIBJPEG_SOURCE_DIR" ]; then
+    echo "Error: libjpeg-turbo source directory not found at $LIBJPEG_SOURCE_DIR"
+    exit 1
+fi
 
-# Configure and build GLFW
+# Get number of CPU cores for parallel build
+NUM_JOBS=$($NPROC)
+
+# Build GLFW
+echo ""
+echo "Building GLFW..."
+mkdir -p "$GLFW_BUILD_DIR"
 cd "$GLFW_BUILD_DIR"
 
-echo "Configuring GLFW with CMake..."
 "$CMAKE_CMD" "$GLFW_SOURCE_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DGLFW_BUILD_EXAMPLES=OFF \
@@ -74,10 +108,7 @@ echo "Configuring GLFW with CMake..."
     -DGLFW_BUILD_DOCS=OFF \
     -DCMAKE_INSTALL_PREFIX="$GLFW_BUILD_DIR/install"
 
-echo "Building GLFW..."
-make -j$(sysctl -n hw.ncpu)
-
-echo "Installing GLFW to local directory..."
+make -j$NUM_JOBS
 make install
 
 # Build FreeType
@@ -95,7 +126,7 @@ cd "$FREETYPE_BUILD_DIR"
     -DFT_DISABLE_BROTLI=TRUE \
     -DCMAKE_INSTALL_PREFIX="$FREETYPE_BUILD_DIR/install"
 
-make -j$(sysctl -n hw.ncpu)
+make -j$NUM_JOBS
 make install
 
 # Build HarfBuzz
@@ -111,7 +142,22 @@ cd "$HARFBUZZ_BUILD_DIR"
     -DFREETYPE_LIBRARY="$FREETYPE_BUILD_DIR/install/lib/libfreetype.a" \
     -DCMAKE_INSTALL_PREFIX="$HARFBUZZ_BUILD_DIR/install"
 
-make -j$(sysctl -n hw.ncpu)
+make -j$NUM_JOBS
+make install
+
+# Build libjpeg-turbo
+echo ""
+echo "Building libjpeg-turbo..."
+mkdir -p "$LIBJPEG_BUILD_DIR"
+cd "$LIBJPEG_BUILD_DIR"
+
+"$CMAKE_CMD" "$LIBJPEG_SOURCE_DIR" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DENABLE_SHARED=OFF \
+    -DENABLE_STATIC=ON \
+    -DCMAKE_INSTALL_PREFIX="$LIBJPEG_BUILD_DIR/install"
+
+make -j$NUM_JOBS
 make install
 
 echo ""
@@ -119,5 +165,6 @@ echo "All dependencies setup complete!"
 echo "GLFW - Headers: $GLFW_BUILD_DIR/install/include | Libraries: $GLFW_BUILD_DIR/install/lib"
 echo "FreeType - Headers: $FREETYPE_BUILD_DIR/install/include | Libraries: $FREETYPE_BUILD_DIR/install/lib"
 echo "HarfBuzz - Headers: $HARFBUZZ_BUILD_DIR/install/include | Libraries: $HARFBUZZ_BUILD_DIR/install/lib"
+echo "libjpeg-turbo - Headers: $LIBJPEG_BUILD_DIR/install/include | Libraries: $LIBJPEG_BUILD_DIR/install/lib"
 echo ""
 echo "You can now build the mdeditor application with: make"

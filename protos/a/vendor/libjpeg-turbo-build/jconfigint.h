@@ -1,5 +1,5 @@
 /* libjpeg-turbo build number */
-#define BUILD  "20251230"
+#define BUILD  "20260110"
 
 /* How to hide global symbols. */
 #define HIDDEN  __attribute__((visibility("hidden")))
@@ -71,6 +71,6 @@
 #define D_ARITH_CODING_SUPPORTED 1
 
 /* Use accelerated SIMD routines. */
-#define WITH_SIMD 1
+/* #undef WITH_SIMD */
 
 #endif

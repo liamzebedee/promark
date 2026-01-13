@@ -219,7 +219,10 @@ int MarkdownRenderer::hitTest(float x, float y) const {
         // Check each line within this layout
         for (size_t lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
             const auto& line = lines[lineIdx];
-            float lineY = rect.position.y + line.yOffset;
+            // Shift hit region down to match visual text position
+            // Text baseline is at yOffset + fontSize, with glyphs extending above
+            // Visual text top is approximately yOffset + 0.2*fontSize
+            float lineY = rect.position.y + line.yOffset + fontSize * 0.2f;
             float lineHeight = fontSize;
 
             // Check Y range
@@ -252,7 +255,8 @@ int MarkdownRenderer::hitTest(float x, float y) const {
 
             for (size_t lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
                 const auto& line = lines[lineIdx];
-                float lineY = rect.position.y + line.yOffset;
+                // Shift hit region down to match visual text position
+                float lineY = rect.position.y + line.yOffset + fontSize * 0.2f;
                 float lineHeight = fontSize;
 
                 if (y >= lineY && y < lineY + lineHeight) {
@@ -299,7 +303,8 @@ int MarkdownRenderer::hitTest(float x, float y) const {
 
             for (size_t lineIdx = 0; lineIdx < lines.size(); lineIdx++) {
                 const auto& line = lines[lineIdx];
-                float lineY = rect.position.y + line.yOffset;
+                // Shift hit region down to match visual text position
+                float lineY = rect.position.y + line.yOffset + fontSize * 0.2f;
                 float lineHeight = fontSize;
                 float centerY = lineY + lineHeight / 2;
                 float dist = std::abs(y - centerY);

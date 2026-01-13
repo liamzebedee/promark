@@ -163,7 +163,66 @@ TestResult test_mouse_click_snap(TestContext& ctx) {
     TEST_PASS();
 }
 
+// Test that clicking at the visual center of text works (not requiring click below)
+// Bug: Hit test region doesn't align with where text is actually rendered
+TestResult test_mouse_click_y_alignment(TestContext& ctx) {
+    std::vector<std::string> screenshots;
+    Engine* engine = ctx.getEngine();
+
+    std::string content = "Test text for Y alignment";
+    engine->setContent(content);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+
+    screenshots.push_back(ctx.captureScreenshot("mouse_click_y_alignment", 0));
+
+    // The text should be at approximately:
+    // - Layout Y: DOCUMENT_MARGIN (50)
+    // - Screen Y: DOCUMENT_MARGIN + TOOLBAR_HEIGHT (50 + 40 = 90)
+    // - With fontSize 28, text baseline is at screen Y = 90 + 28 = 118
+    // - Visible text is roughly from screen Y = 94 to Y = 118 (ascenders above baseline)
+
+    float screenYTop = 40 + 50;  // TOOLBAR_HEIGHT + DOCUMENT_MARGIN = 90
+    float fontSize = 28.0f;
+
+    // Test 1: Click at the TOP of where text should visually be (should hit)
+    // Visual text top is approximately at screenY = 90 + 4 = 94 (baseline - ascent)
+    float visualTextTop = screenYTop + 4;  // Approximate
+
+    std::cout << "  Testing Y alignment bug:" << std::endl;
+    std::cout << "  Screen Y top of hit region: " << screenYTop << std::endl;
+    std::cout << "  Visual text top (approx): " << visualTextTop << std::endl;
+
+    // Click at visual center of text
+    float visualCenter = screenYTop + fontSize / 2;  // 90 + 14 = 104
+    ctx.simulateClick(100, visualCenter);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+    screenshots.push_back(ctx.captureScreenshot("mouse_click_y_alignment", 1));
+    std::cout << "  Click at visual center y=" << visualCenter << std::endl;
+
+    // Click at top of hit region (may be above visible text)
+    ctx.simulateClick(100, screenYTop + 1);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+    screenshots.push_back(ctx.captureScreenshot("mouse_click_y_alignment", 2));
+    std::cout << "  Click at top of hit region y=" << (screenYTop + 1) << std::endl;
+
+    // Click at baseline (bottom of hit region - may miss due to < vs <=)
+    float baseline = screenYTop + fontSize;  // 90 + 28 = 118
+    ctx.simulateClick(100, baseline - 1);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+    screenshots.push_back(ctx.captureScreenshot("mouse_click_y_alignment", 3));
+    std::cout << "  Click just above baseline y=" << (baseline - 1) << std::endl;
+
+    // Click below baseline (descender area - currently misses)
+    ctx.simulateClick(100, baseline + 5);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+    screenshots.push_back(ctx.captureScreenshot("mouse_click_y_alignment", 4));
+    std::cout << "  Click below baseline y=" << (baseline + 5) << " (in descender area)" << std::endl;
+
+    TEST_PASS();
+}
+
 REGISTER_TEST(mouse_click_positioning, test_mouse_click_positioning);
 REGISTER_TEST(mouse_click_multiline, test_mouse_click_multiline);
 REGISTER_TEST(mouse_click_accuracy, test_mouse_click_accuracy);
 REGISTER_TEST(mouse_click_snap, test_mouse_click_snap);
+REGISTER_TEST(mouse_click_y_alignment, test_mouse_click_y_alignment);
