@@ -82,9 +82,9 @@ Architecture:
             - debugging paints - debug borders for boxes
     - rasterize
         - turns (part of) a display item list into a bitmap of color values
-        - issues opengl calls to render to a FrameBuffer
+        - issues opengl calls to render to a content surface buffer
     - viz
-        - displays the FrameBuffer on the window
+        - displays the content surface buffer on the window
 
     Raw mode render engine:
     - raw text
@@ -147,6 +147,7 @@ Architecture:
     - Selection/highlight
     - Mouse
         - Position cursor
+        - Clicking within a line's "hit box" positions the cursor
         - Single, double, triple click handling
     - Keyboard
         - Copy, paste
@@ -176,6 +177,15 @@ Architecture:
     Software:
     - WebGL port
     - CLI version (mdedit <file>.md)
+
+
+make it so there are two editing views: raw and visual
+
+raw mode is editing raw markdown text. there are no images or blocks.
+visual mode is editing wysiwig. you can see images, blocks, etc.
+
+both modes share the same caret and highlight selections. when you swap modes (ctrl+r toggle), you are placed in the same position of each view into the document. the highlight is the same too.
+
 
 ## Future features.
 
