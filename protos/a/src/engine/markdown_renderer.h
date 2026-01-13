@@ -7,6 +7,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <memory>
+#include <cstdint>
 
 // Caret/selection state (similar to Blink's FrameSelection)
 struct CaretState {
@@ -25,7 +26,14 @@ public:
     MarkdownRenderer();
     ~MarkdownRenderer();
 
+    // Set text buffer reference (does NOT take ownership)
+    // MarkdownRenderer observes the TextBuffer and uses version tracking
+    // to detect when re-parsing is needed
+    void setTextBuffer(const TextBuffer* buffer);
+
+    // Legacy method for compatibility during transition
     void setTextBuffer(std::unique_ptr<TextBuffer> buffer);
+
     void setCaretState(const CaretState& state);
     void setFontFace(FT_Face face);
     void setMonoFontFace(FT_Face face);
@@ -60,7 +68,14 @@ public:
     std::string getLinkAtPosition(float x, float y) const;
 
 private:
-    std::unique_ptr<TextBuffer> textBuffer;
+    // Non-owning pointer to the authoritative TextBuffer
+    const TextBuffer* textBuffer;
+
+    // Owned copy for legacy compatibility (will be removed in future)
+    std::unique_ptr<TextBuffer> ownedTextBuffer;
+
+    uint64_t lastTextVersion;  // Track version to detect changes
+
     std::unique_ptr<MarkdownParser> parser;
     std::unique_ptr<LayoutEngine> layoutEngine;
     std::unique_ptr<Painter> painter;

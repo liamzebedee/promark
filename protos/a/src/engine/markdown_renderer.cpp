@@ -1,7 +1,8 @@
 #include "markdown_renderer.h"
 
-MarkdownRenderer::MarkdownRenderer() 
-    : needsReparse(true), needsRelayout(true), needsRepaint(true) {
+MarkdownRenderer::MarkdownRenderer()
+    : textBuffer(nullptr), lastTextVersion(0),
+      needsReparse(true), needsRelayout(true), needsRepaint(true) {
     parser = std::make_unique<MarkdownParser>();
     layoutEngine = std::make_unique<LayoutEngine>();
     painter = std::make_unique<Painter>();
@@ -11,8 +12,24 @@ MarkdownRenderer::MarkdownRenderer()
 MarkdownRenderer::~MarkdownRenderer() {
 }
 
+void MarkdownRenderer::setTextBuffer(const TextBuffer* buffer) {
+    textBuffer = buffer;
+    ownedTextBuffer.reset();  // Clear any owned buffer
+    if (buffer) {
+        lastTextVersion = buffer->getVersion();
+    }
+    needsReparse = true;
+    needsRelayout = true;
+    needsRepaint = true;
+}
+
 void MarkdownRenderer::setTextBuffer(std::unique_ptr<TextBuffer> buffer) {
-    textBuffer = std::move(buffer);
+    // Legacy compatibility: take ownership and set pointer
+    ownedTextBuffer = std::move(buffer);
+    textBuffer = ownedTextBuffer.get();
+    if (textBuffer) {
+        lastTextVersion = textBuffer->getVersion();
+    }
     needsReparse = true;
     needsRelayout = true;
     needsRepaint = true;
@@ -43,6 +60,12 @@ void MarkdownRenderer::setMonoFontFace(FT_Face face) {
 }
 
 void MarkdownRenderer::render(const Size& viewportSize, float scrollOffsetY) {
+    // Check if text has changed using version tracking
+    if (textBuffer && textBuffer->getVersion() != lastTextVersion) {
+        lastTextVersion = textBuffer->getVersion();
+        needsReparse = true;
+    }
+
     if (needsReparse) {
         parseMarkdown();
     }

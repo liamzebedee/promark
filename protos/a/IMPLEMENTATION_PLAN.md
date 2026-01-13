@@ -17,21 +17,23 @@ This plan addresses architectural violations and missing features identified thr
 These must be resolved first as they block correct implementation of other features.
 
 ### P0-1: Create TextModel as Single Source of Truth
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: None
 - **Problem**: Three copies of document exist:
   1. `inputBuffer char[]` in Engine (10MB, authoritative) - `engine.h:52-54`
   2. `TextBuffer` in Engine (sync'd via setText)
   3. `TextBuffer` in MarkdownRenderer (another copy)
+- **Solution**: TextBuffer is now the single source of truth for document content with version tracking (getVersion()) and dirty flag (isDirty(), markClean())
 - **Spec Reference**: `specs/05-text-buffer.md`
 - **Files**: `src/engine/engine.h`, `src/engine/engine.cpp`, `src/engine/text_buffer.h`
 
 ### P0-2: Remove inputBuffer char[] from Engine
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: P0-1
 - **Problem**: Raw `char*` buffer is authoritative instead of TextModel
+- **Solution**: Engine no longer has inputBuffer char[] - all text operations now go through TextBuffer. MarkdownRenderer accepts a const TextBuffer* pointer instead of owning a copy, using version tracking to detect changes.
 - **Files**: `src/engine/engine.h:52`, `src/engine/engine.cpp`
 
 ### P0-3: Create RenderBackend Abstraction
@@ -244,7 +246,7 @@ These must be resolved first as they block correct implementation of other featu
 - **Complexity**: S
 - **Dependencies**: P0-1
 - **Problem**: `edit.cpp:13` has `diskContent` string with O(n) comparison every frame (`edit.cpp:18, 319`)
-- **Required**: Use Engine's isDirty() flag instead
+- **Required**: Use TextBuffer.isDirty() flag instead (dirty tracking is now handled by TextBuffer via isDirty() and markClean())
 - **Files**: `src/edit.cpp`
 
 ---

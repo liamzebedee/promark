@@ -7,28 +7,23 @@
 #include <algorithm>
 #include <cmath>
 
-Engine::Engine() : wantsToClose(false), leftMouseHeld(false), dirty(false), lastClickTime(0), lastClickX(0), lastClickY(0), clickCount(0),
-                   scrollOffset(0.0f), contentHeight(0.0f), viewportHeight(0), inputBuffer(nullptr), inputLength(0),
+Engine::Engine() : wantsToClose(false), leftMouseHeld(false), lastClickTime(0), lastClickX(0), lastClickY(0), clickCount(0),
+                   scrollOffset(0.0f), contentHeight(0.0f), viewportHeight(0),
                    fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
                    viewportWidth(800), uiRendererInitialized(false),
                    caretAnimX(0), caretAnimY(0),
                    caretTargetX(0), caretTargetY(0), lastBlinkTime(0), caretVisible(true),
                    showRaw(false) {
-    // Allocate 10MB input buffer
-    inputBuffer = new char[INPUT_BUFFER_SIZE];
-    memset(inputBuffer, 0, INPUT_BUFFER_SIZE);
-    inputLength = 0;
+    // TextBuffer is the single source of truth for document content
+    textBuffer = std::make_unique<TextBuffer>();
     cursorPos = 0;
 
-    // Initialize markdown rendering system
+    // Initialize markdown rendering system with pointer to our TextBuffer
     markdownRenderer = std::make_unique<MarkdownRenderer>();
-    textBuffer = std::make_unique<TextBuffer>();
-    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
+    markdownRenderer->setTextBuffer(textBuffer.get());
 }
 
 Engine::~Engine() {
-    delete[] inputBuffer;
-
     if (fontLoaded) {
         FT_Done_Face(face);
         if (monoFace) {
@@ -340,7 +335,7 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                     selectionStart = cursorPos;
                     hasSelection = true;
                 }
-                cursorPos = inputLength;
+                cursorPos = static_cast<int>(textBuffer->getLength());
                 if (shift) selectionEnd = cursorPos;
                 else hasSelection = false;
                 // Scroll to bottom
@@ -356,18 +351,10 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 saveUndoState();
                 int start = std::min(selectionStart, selectionEnd);
                 int end = std::max(selectionStart, selectionEnd);
-                memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
-                inputLength -= (end - start);
+                textBuffer->deleteText(start, end - start);
                 cursorPos = start;
                 goalColumn = getColumnInLine(cursorPos);
                 hasSelection = false;
-
-                // Update markdown content
-                if (textBuffer && markdownRenderer) {
-                    std::string newText(inputBuffer, inputLength);
-                    textBuffer->setText(newText);
-                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-                }
             } else if (cmdOrCtrl && cursorPos > 0) {
                 // Cmd/Ctrl+Backspace: delete to start of line
                 saveUndoState();
@@ -375,22 +362,14 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 if (lineStart < cursorPos) {
                     // Delete from cursor to start of line
                     int deleteCount = cursorPos - lineStart;
-                    memmove(inputBuffer + lineStart, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-                    inputLength -= deleteCount;
+                    textBuffer->deleteText(lineStart, deleteCount);
                     cursorPos = lineStart;
                 } else if (cursorPos > 0) {
                     // Already at start of line - delete the newline to merge with previous line
-                    memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-                    inputLength--;
+                    textBuffer->deleteText(cursorPos - 1, 1);
                     cursorPos--;
                 }
                 goalColumn = getColumnInLine(cursorPos);
-
-                if (textBuffer && markdownRenderer) {
-                    std::string newText(inputBuffer, inputLength);
-                    textBuffer->setText(newText);
-                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-                }
             } else if (alt && cursorPos > 0) {
                 // Alt+Backspace: delete word backwards
                 deleteWordBackward();
@@ -399,34 +378,18 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
             }
             
         } else if (key == GLFW_KEY_DELETE) {
+            int inputLength = static_cast<int>(textBuffer->getLength());
             if (hasSelection) {
                 // Delete selection
                 saveUndoState();
                 int start = std::min(selectionStart, selectionEnd);
                 int end = std::max(selectionStart, selectionEnd);
-                memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
-                inputLength -= (end - start);
+                textBuffer->deleteText(start, end - start);
                 cursorPos = start;
                 hasSelection = false;
-
-                // Update markdown content
-                if (textBuffer && markdownRenderer) {
-                    std::string newText(inputBuffer, inputLength);
-                    textBuffer->setText(newText);
-                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-                }
             } else if (cursorPos < inputLength) {
                 saveUndoState();
-                memmove(inputBuffer + cursorPos, inputBuffer + cursorPos + 1, inputLength - cursorPos);
-                inputLength--;
-                inputBuffer[inputLength] = '\0';
-
-                // Update markdown content
-                if (textBuffer && markdownRenderer) {
-                    std::string newText(inputBuffer, inputLength);
-                    textBuffer->setText(newText);
-                    markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-                }
+                textBuffer->deleteText(cursorPos, 1);
             }
             
         } else if (key == GLFW_KEY_HOME) {
@@ -437,9 +400,9 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 selectionEnd = cursorPos;
                 hasSelection = true;
             }
-            
+
         } else if (key == GLFW_KEY_END) {
-            cursorPos = inputLength;
+            cursorPos = static_cast<int>(textBuffer->getLength());
             if (!shift) hasSelection = false;
             else {
                 if (!hasSelection) selectionStart = cursorPos;
@@ -519,6 +482,7 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                 clickCount = 1;
             }
 
+            int inputLength = static_cast<int>(textBuffer->getLength());
             if (showRaw) {
                 // Raw mode: simple monospace hit test directly on raw buffer
                 cursorPos = hitTestRaw(static_cast<float>(x), static_cast<float>(y));
@@ -545,7 +509,7 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                 int lineStart = findLineStart(cursorPos);
                 int lineEnd = findLineEnd(cursorPos);
                 // Include the newline if present
-                if (lineEnd < inputLength && inputBuffer[lineEnd] == '\n') {
+                if (lineEnd < inputLength && textBuffer->charAt(lineEnd) == '\n') {
                     lineEnd++;
                 }
                 selectionStart = lineStart;
@@ -605,6 +569,7 @@ void Engine::handleMouseMove(double x, double y) {
         } else {
             return;
         }
+        int inputLength = static_cast<int>(textBuffer->getLength());
         newPos = std::max(0, std::min(newPos, inputLength));
         cursorPos = newPos;
         selectionEnd = newPos;
@@ -637,6 +602,7 @@ bool Engine::loadFont(const char* fontPath) {
 }
 
 void Engine::moveCursor(int delta, bool extendSelection) {
+    int inputLength = static_cast<int>(textBuffer->getLength());
     int newPos;
 
     if (extendSelection) {
@@ -688,14 +654,15 @@ void Engine::moveCursorByWord(int direction, bool extendSelection) {
 }
 
 int Engine::findWordBoundary(int pos, int direction) {
+    int inputLength = static_cast<int>(textBuffer->getLength());
     if (direction > 0) {
         // Move forward to next word
-        while (pos < inputLength && inputBuffer[pos] != ' ' && inputBuffer[pos] != '\n') pos++;
-        while (pos < inputLength && (inputBuffer[pos] == ' ' || inputBuffer[pos] == '\n')) pos++;
+        while (pos < inputLength && textBuffer->charAt(pos) != ' ' && textBuffer->charAt(pos) != '\n') pos++;
+        while (pos < inputLength && (textBuffer->charAt(pos) == ' ' || textBuffer->charAt(pos) == '\n')) pos++;
     } else {
         // Move backward to previous word
-        while (pos > 0 && (inputBuffer[pos-1] == ' ' || inputBuffer[pos-1] == '\n')) pos--;
-        while (pos > 0 && inputBuffer[pos-1] != ' ' && inputBuffer[pos-1] != '\n') pos--;
+        while (pos > 0 && (textBuffer->charAt(pos-1) == ' ' || textBuffer->charAt(pos-1) == '\n')) pos--;
+        while (pos > 0 && textBuffer->charAt(pos-1) != ' ' && textBuffer->charAt(pos-1) != '\n') pos--;
     }
     return pos;
 }
@@ -707,31 +674,22 @@ void Engine::insertChar(char c) {
         // Replace selection
         int start = std::min(selectionStart, selectionEnd);
         int end = std::max(selectionStart, selectionEnd);
-        memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
-        inputLength -= (end - start);
-        cursorPos = start;
+        std::string s(1, c);
+        textBuffer->replaceText(start, end - start, s);
+        cursorPos = start + 1;
         hasSelection = false;
-    }
-
-    if (inputLength < INPUT_BUFFER_SIZE - 1) {
-        memmove(inputBuffer + cursorPos + 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-        inputBuffer[cursorPos] = c;
-        inputLength++;
+    } else {
+        std::string s(1, c);
+        textBuffer->insertText(cursorPos, s);
         cursorPos++;
-
-        // Update markdown content
-        if (textBuffer && markdownRenderer) {
-            std::string newText(inputBuffer, inputLength);
-            textBuffer->setText(newText);
-            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-        }
-        ensureCursorVisible();
-
-        // Reset blink timer so cursor is visible after typing
-        lastBlinkTime = glfwGetTime();
-        caretVisible = true;
-        goalColumn = getColumnInLine(cursorPos);
     }
+
+    ensureCursorVisible();
+
+    // Reset blink timer so cursor is visible after typing
+    lastBlinkTime = glfwGetTime();
+    caretVisible = true;
+    goalColumn = getColumnInLine(cursorPos);
 }
 
 void Engine::insertText(const std::string& text) {
@@ -743,49 +701,28 @@ void Engine::insertText(const std::string& text) {
         // Replace selection
         int start = std::min(selectionStart, selectionEnd);
         int end = std::max(selectionStart, selectionEnd);
-        memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
-        inputLength -= (end - start);
-        cursorPos = start;
+        textBuffer->replaceText(start, end - start, text);
+        cursorPos = start + static_cast<int>(text.length());
         hasSelection = false;
+    } else {
+        textBuffer->insertText(cursorPos, text);
+        cursorPos += static_cast<int>(text.length());
     }
 
-    int insertLen = static_cast<int>(text.length());
-    if (inputLength + insertLen < INPUT_BUFFER_SIZE - 1) {
-        memmove(inputBuffer + cursorPos + insertLen, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-        memcpy(inputBuffer + cursorPos, text.c_str(), insertLen);
-        inputLength += insertLen;
-        cursorPos += insertLen;
+    ensureCursorVisible();
 
-        // Update markdown content
-        if (textBuffer && markdownRenderer) {
-            std::string newText(inputBuffer, inputLength);
-            textBuffer->setText(newText);
-            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-        }
-        ensureCursorVisible();
-        dirty = true;
-
-        // Reset blink timer so cursor is visible after typing
-        lastBlinkTime = glfwGetTime();
-        caretVisible = true;
-        goalColumn = getColumnInLine(cursorPos);
-    }
+    // Reset blink timer so cursor is visible after typing
+    lastBlinkTime = glfwGetTime();
+    caretVisible = true;
+    goalColumn = getColumnInLine(cursorPos);
 }
 
 void Engine::deleteChar() {
     saveUndoState();
 
     if (cursorPos > 0) {
-        memmove(inputBuffer + cursorPos - 1, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-        inputLength--;
+        textBuffer->deleteText(cursorPos - 1, 1);
         cursorPos--;
-
-        // Update markdown content
-        if (textBuffer && markdownRenderer) {
-            std::string newText(inputBuffer, inputLength);
-            textBuffer->setText(newText);
-            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-        }
         goalColumn = getColumnInLine(cursorPos);
     }
 }
@@ -798,29 +735,23 @@ void Engine::deleteWordBackward() {
         int deleteCount = cursorPos - wordStart;
 
         if (deleteCount > 0) {
-            memmove(inputBuffer + wordStart, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-            inputLength -= deleteCount;
+            textBuffer->deleteText(wordStart, deleteCount);
             cursorPos = wordStart;
-
-            if (textBuffer && markdownRenderer) {
-                std::string newText(inputBuffer, inputLength);
-                textBuffer->setText(newText);
-                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-            }
             goalColumn = getColumnInLine(cursorPos);
         }
     }
 }
 
 int Engine::findLineStart(int pos) {
-    while (pos > 0 && inputBuffer[pos - 1] != '\n') {
+    while (pos > 0 && textBuffer->charAt(pos - 1) != '\n') {
         pos--;
     }
     return pos;
 }
 
 int Engine::findLineEnd(int pos) {
-    while (pos < inputLength && inputBuffer[pos] != '\n') {
+    int inputLength = static_cast<int>(textBuffer->getLength());
+    while (pos < inputLength && textBuffer->charAt(pos) != '\n') {
         pos++;
     }
     return pos;
@@ -839,6 +770,7 @@ int Engine::findPositionInLine(int lineStart, int column) {
 }
 
 void Engine::moveCursorVertically(int direction, bool extendSelection) {
+    int inputLength = static_cast<int>(textBuffer->getLength());
     int currentLineStart = findLineStart(cursorPos);
     int newPos = cursorPos;
 
@@ -877,6 +809,7 @@ void Engine::moveCursorVertically(int direction, bool extendSelection) {
 }
 
 void Engine::selectAll() {
+    int inputLength = static_cast<int>(textBuffer->getLength());
     selectionStart = 0;
     selectionEnd = inputLength;
     cursorPos = inputLength;
@@ -890,7 +823,7 @@ void Engine::copySelection() {
 
     int start = std::min(selectionStart, selectionEnd);
     int end = std::max(selectionStart, selectionEnd);
-    std::string selectedText(inputBuffer + start, end - start);
+    std::string selectedText = textBuffer->getText().substr(start, end - start);
     Clipboard::setText(selectedText);
 }
 
@@ -902,32 +835,20 @@ void Engine::paste() {
 
     saveUndoState();
 
-    // Delete selection if present
     if (hasSelection) {
+        // Replace selection with clipboard text
         int start = std::min(selectionStart, selectionEnd);
         int end = std::max(selectionStart, selectionEnd);
-        memmove(inputBuffer + start, inputBuffer + end, inputLength - end + 1);
-        inputLength -= (end - start);
-        cursorPos = start;
+        textBuffer->replaceText(start, end - start, clipboardText);
+        cursorPos = start + static_cast<int>(clipboardText.length());
         hasSelection = false;
+    } else {
+        // Insert clipboard text at cursor
+        textBuffer->insertText(cursorPos, clipboardText);
+        cursorPos += static_cast<int>(clipboardText.length());
     }
 
-    // Insert clipboard text
-    int pasteLen = clipboardText.length();
-    if (inputLength + pasteLen < INPUT_BUFFER_SIZE - 1) {
-        memmove(inputBuffer + cursorPos + pasteLen, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-        memcpy(inputBuffer + cursorPos, clipboardText.c_str(), pasteLen);
-        inputLength += pasteLen;
-        cursorPos += pasteLen;
-
-        // Update markdown content
-        if (textBuffer && markdownRenderer) {
-            std::string newText(inputBuffer, inputLength);
-            textBuffer->setText(newText);
-            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-        }
-        ensureCursorVisible();
-    }
+    ensureCursorVisible();
 }
 
 void Engine::ensureCursorVisible() {
@@ -972,7 +893,7 @@ void Engine::updateCaretAnimation() {
 
 void Engine::saveUndoState() {
     UndoState state;
-    state.text = std::string(inputBuffer, inputLength);
+    state.text = textBuffer->getText();
     state.cursorPos = cursorPos;
 
     undoStack.push_back(state);
@@ -981,36 +902,26 @@ void Engine::saveUndoState() {
     if (undoStack.size() > MAX_UNDO) {
         undoStack.erase(undoStack.begin());
     }
-
-    dirty = true;
 }
 
 void Engine::setContent(const std::string& content) {
-    size_t len = std::min(content.length(), (size_t)(INPUT_BUFFER_SIZE - 1));
-    memcpy(inputBuffer, content.c_str(), len);
-    inputBuffer[len] = '\0';
-    inputLength = len;
+    textBuffer->setText(content);
+    textBuffer->markClean();  // Content just loaded, not dirty
     cursorPos = 0;
     goalColumn = 0;
     hasSelection = false;
     undoStack.clear();
-    dirty = false;
-
-    if (textBuffer && markdownRenderer) {
-        textBuffer->setText(content);
-        markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-    }
 }
 
 std::string Engine::getContent() const {
-    return std::string(inputBuffer, inputLength);
+    return textBuffer->getText();
 }
 
 std::string Engine::getSelectedText() const {
     if (!hasSelection) return "";
     int start = std::min(selectionStart, selectionEnd);
     int end = std::max(selectionStart, selectionEnd);
-    return std::string(inputBuffer + start, end - start);
+    return textBuffer->getText().substr(start, end - start);
 }
 
 void Engine::undo() {
@@ -1020,18 +931,11 @@ void Engine::undo() {
     undoStack.pop_back();
 
     // Restore state
-    memcpy(inputBuffer, state.text.c_str(), state.text.length());
-    inputBuffer[state.text.length()] = '\0';
-    inputLength = state.text.length();
+    textBuffer->setText(state.text);
+    int inputLength = static_cast<int>(textBuffer->getLength());
     cursorPos = std::min(state.cursorPos, inputLength);
     goalColumn = getColumnInLine(cursorPos);
     hasSelection = false;
-
-    // Update markdown content
-    if (textBuffer && markdownRenderer) {
-        textBuffer->setText(state.text);
-        markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-    }
 
     // Reset blink
     lastBlinkTime = glfwGetTime();
@@ -1058,6 +962,7 @@ float Engine::getCursorYRaw() {
     float lineY = topMargin + fontSize;
     float lineX = 0;
     int lineStart = 0;
+    int inputLength = static_cast<int>(textBuffer->getLength());
 
     for (int i = 0; i < inputLength; i++) {
         // Check if cursor is at this position
@@ -1065,7 +970,7 @@ float Engine::getCursorYRaw() {
             return lineY;
         }
 
-        char c = inputBuffer[i];
+        char c = textBuffer->charAt(i);
 
         if (c == '\n') {
             lineY += lineHeight;
@@ -1078,7 +983,7 @@ float Engine::getCursorYRaw() {
         if (lineX + charWidth > maxLineWidth && i > lineStart) {
             int breakPoint = -1;
             for (int j = i - 1; j >= lineStart; j--) {
-                if (inputBuffer[j] == ' ') {
+                if (textBuffer->charAt(j) == ' ') {
                     breakPoint = j;
                     break;
                 }
@@ -1130,9 +1035,10 @@ int Engine::hitTestRaw(float x, float y) {
     float lineY = topMargin + fontSize;
     float lineX = 0;
     int lineStart = 0;
+    int inputLength = static_cast<int>(textBuffer->getLength());
 
     for (int i = 0; i < inputLength; i++) {
-        char c = inputBuffer[i];
+        char c = textBuffer->charAt(i);
 
         if (c == '\n') {
             lines.push_back({lineStart, i, lineY});
@@ -1147,7 +1053,7 @@ int Engine::hitTestRaw(float x, float y) {
             // Find break point (last space)
             int breakPoint = -1;
             for (int j = i - 1; j >= lineStart; j--) {
-                if (inputBuffer[j] == ' ') {
+                if (textBuffer->charAt(j) == ' ') {
                     breakPoint = j;
                     break;
                 }
@@ -1247,7 +1153,7 @@ void Engine::renderRawText(int width, int height) {
     struct RenderChar {
         char c;
         float r, g, b;  // Color
-        int srcIndex;   // Original index in inputBuffer
+        int srcIndex;   // Original index in textBuffer
     };
     struct RenderLine {
         std::vector<RenderChar> chars;
@@ -1272,18 +1178,19 @@ void Engine::renderRawText(int width, int height) {
 
     bool inCodeBlock = false;
     bool inInlineCode = false;
-    bool lineStart = true;
+    bool lineStartFlag = true;
     bool isHeadingLine = false;
     bool isListLine = false;
     bool isBlockquoteLine = false;
+    int inputLength = static_cast<int>(textBuffer->getLength());
 
     for (int i = 0; i < inputLength; i++) {
-        char c = inputBuffer[i];
+        char c = textBuffer->charAt(i);
 
         // Detect line-level syntax at start of line
-        if (lineStart && c != '\n') {
+        if (lineStartFlag && c != '\n') {
             // Check for code block fence
-            if (i + 2 < inputLength && inputBuffer[i] == '`' && inputBuffer[i+1] == '`' && inputBuffer[i+2] == '`') {
+            if (i + 2 < inputLength && textBuffer->charAt(i) == '`' && textBuffer->charAt(i+1) == '`' && textBuffer->charAt(i+2) == '`') {
                 inCodeBlock = !inCodeBlock;
             }
             // Check for heading
@@ -1298,7 +1205,7 @@ void Engine::renderRawText(int width, int height) {
             if (!inCodeBlock && c == '>') {
                 isBlockquoteLine = true;
             }
-            lineStart = false;
+            lineStartFlag = false;
         }
 
         if (c == '\n') {
@@ -1307,7 +1214,7 @@ void Engine::renderRawText(int width, int height) {
             y += lineHeight;
             currentLine.y = y;
             x = 0;
-            lineStart = true;
+            lineStartFlag = true;
             isHeadingLine = false;
             isListLine = false;
             isBlockquoteLine = false;
@@ -1613,31 +1520,18 @@ void Engine::wrapSelection(const std::string& before, const std::string& after) 
     int start = std::min(selectionStart, selectionEnd);
     int end = std::max(selectionStart, selectionEnd);
     int selLen = end - start;
-    int insertLen = before.length() + after.length();
 
-    if (inputLength + insertLen >= INPUT_BUFFER_SIZE - 1) return;
+    // Get selected text and wrap it
+    std::string selectedText = textBuffer->getText().substr(start, selLen);
+    std::string wrapped = before + selectedText + after;
 
-    // Make room for after text at end of selection
-    memmove(inputBuffer + end + after.length(), inputBuffer + end, inputLength - end + 1);
-    memcpy(inputBuffer + end, after.c_str(), after.length());
-    inputLength += after.length();
-
-    // Make room for before text at start of selection
-    memmove(inputBuffer + start + before.length(), inputBuffer + start, inputLength - start + 1);
-    memcpy(inputBuffer + start, before.c_str(), before.length());
-    inputLength += before.length();
+    // Replace selection with wrapped text
+    textBuffer->replaceText(start, selLen, wrapped);
 
     // Update selection to cover wrapped text
     selectionStart = start;
-    selectionEnd = start + before.length() + selLen + after.length();
+    selectionEnd = start + static_cast<int>(wrapped.length());
     cursorPos = selectionEnd;
-
-    // Update markdown content
-    if (textBuffer && markdownRenderer) {
-        std::string newText(inputBuffer, inputLength);
-        textBuffer->setText(newText);
-        markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-    }
 }
 
 void Engine::applyBold() {
@@ -1646,18 +1540,8 @@ void Engine::applyBold() {
     } else {
         // Insert ** markers and place cursor between them
         saveUndoState();
-        if (inputLength + 4 < INPUT_BUFFER_SIZE - 1) {
-            memmove(inputBuffer + cursorPos + 4, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-            memcpy(inputBuffer + cursorPos, "****", 4);
-            inputLength += 4;
-            cursorPos += 2;  // Place cursor between ** markers
-
-            if (textBuffer && markdownRenderer) {
-                std::string newText(inputBuffer, inputLength);
-                textBuffer->setText(newText);
-                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-            }
-        }
+        textBuffer->insertText(cursorPos, "****");
+        cursorPos += 2;  // Place cursor between ** markers
     }
 }
 
@@ -1667,18 +1551,8 @@ void Engine::applyItalic() {
     } else {
         // Insert * markers and place cursor between them
         saveUndoState();
-        if (inputLength + 2 < INPUT_BUFFER_SIZE - 1) {
-            memmove(inputBuffer + cursorPos + 2, inputBuffer + cursorPos, inputLength - cursorPos + 1);
-            memcpy(inputBuffer + cursorPos, "**", 2);
-            inputLength += 2;
-            cursorPos += 1;  // Place cursor between * markers
-
-            if (textBuffer && markdownRenderer) {
-                std::string newText(inputBuffer, inputLength);
-                textBuffer->setText(newText);
-                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-            }
-        }
+        textBuffer->insertText(cursorPos, "**");
+        cursorPos += 1;  // Place cursor between * markers
     }
 }
 
@@ -1694,38 +1568,28 @@ void Engine::applyHeading(int level) {
     prefix += " ";
 
     // Check if line already has heading markers - remove them first
+    int inputLength = static_cast<int>(textBuffer->getLength());
     int existingLevel = 0;
     int pos = lineStart;
-    while (pos < inputLength && inputBuffer[pos] == '#') {
+    while (pos < inputLength && textBuffer->charAt(pos) == '#') {
         existingLevel++;
         pos++;
     }
-    if (existingLevel > 0 && pos < inputLength && inputBuffer[pos] == ' ') {
+    if (existingLevel > 0 && pos < inputLength && textBuffer->charAt(pos) == ' ') {
         pos++;  // Include space after #
     }
 
     if (existingLevel > 0) {
         // Remove existing heading prefix
         int removeLen = pos - lineStart;
-        memmove(inputBuffer + lineStart, inputBuffer + pos, inputLength - pos + 1);
-        inputLength -= removeLen;
+        textBuffer->deleteText(lineStart, removeLen);
         cursorPos -= removeLen;
         if (cursorPos < lineStart) cursorPos = lineStart;
     }
 
     // Insert new heading prefix at line start
-    if (inputLength + prefix.length() < INPUT_BUFFER_SIZE - 1) {
-        memmove(inputBuffer + lineStart + prefix.length(), inputBuffer + lineStart, inputLength - lineStart + 1);
-        memcpy(inputBuffer + lineStart, prefix.c_str(), prefix.length());
-        inputLength += prefix.length();
-        cursorPos += prefix.length();
-
-        if (textBuffer && markdownRenderer) {
-            std::string newText(inputBuffer, inputLength);
-            textBuffer->setText(newText);
-            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-        }
-    }
+    textBuffer->insertText(lineStart, prefix);
+    cursorPos += static_cast<int>(prefix.length());
 
     hasSelection = false;
 }
@@ -1735,59 +1599,32 @@ void Engine::applyLink() {
         // Wrap selected text as link text
         int start = std::min(selectionStart, selectionEnd);
         int end = std::max(selectionStart, selectionEnd);
-        std::string selectedText(inputBuffer + start, end - start);
+        int selLen = end - start;
+        std::string selectedText = textBuffer->getText().substr(start, selLen);
 
         saveUndoState();
 
         // Build link syntax: [selected text](url)
-        std::string before = "[";
-        std::string after = "](url)";
-
-        if (inputLength + before.length() + after.length() >= INPUT_BUFFER_SIZE - 1) return;
-
-        // Insert after part
-        memmove(inputBuffer + end + after.length(), inputBuffer + end, inputLength - end + 1);
-        memcpy(inputBuffer + end, after.c_str(), after.length());
-        inputLength += after.length();
-
-        // Insert before part
-        memmove(inputBuffer + start + before.length(), inputBuffer + start, inputLength - start + 1);
-        memcpy(inputBuffer + start, before.c_str(), before.length());
-        inputLength += before.length();
+        std::string wrapped = "[" + selectedText + "](url)";
+        textBuffer->replaceText(start, selLen, wrapped);
 
         // Position cursor to select "url" placeholder
-        int urlStart = start + before.length() + (end - start) + 2;  // After ](
+        int urlStart = start + 1 + selLen + 2;  // After [selectedText](
         selectionStart = urlStart;
         selectionEnd = urlStart + 3;  // Select "url"
         cursorPos = selectionEnd;
         hasSelection = true;
-
-        if (textBuffer && markdownRenderer) {
-            std::string newText(inputBuffer, inputLength);
-            textBuffer->setText(newText);
-            markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-        }
     } else {
         // Insert link template
         saveUndoState();
         std::string linkTemplate = "[text](url)";
-        if (inputLength + linkTemplate.length() < INPUT_BUFFER_SIZE - 1) {
-            memmove(inputBuffer + cursorPos + linkTemplate.length(), inputBuffer + cursorPos, inputLength - cursorPos + 1);
-            memcpy(inputBuffer + cursorPos, linkTemplate.c_str(), linkTemplate.length());
-            inputLength += linkTemplate.length();
+        textBuffer->insertText(cursorPos, linkTemplate);
 
-            // Select "text" placeholder
-            selectionStart = cursorPos + 1;
-            selectionEnd = cursorPos + 5;  // "text" is 4 chars, end is exclusive
-            cursorPos = selectionEnd;
-            hasSelection = true;
-
-            if (textBuffer && markdownRenderer) {
-                std::string newText(inputBuffer, inputLength);
-                textBuffer->setText(newText);
-                markdownRenderer->setTextBuffer(std::make_unique<TextBuffer>(*textBuffer));
-            }
-        }
+        // Select "text" placeholder
+        selectionStart = cursorPos + 1;
+        selectionEnd = cursorPos + 5;  // "text" is 4 chars, end is exclusive
+        cursorPos = selectionEnd;
+        hasSelection = true;
     }
 }
 

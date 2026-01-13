@@ -18,7 +18,7 @@ class Engine {
 public:
     Engine();
     ~Engine();
-    
+
     bool initialize();
     void render(int width, int height);
     void handleKeyboard(int key, int scancode, int action, int mods);
@@ -31,8 +31,8 @@ public:
     void setContent(const std::string& content);
     std::string getContent() const;
     std::string getSelectedText() const;
-    bool isDirty() const { return dirty; }
-    void markClean() { dirty = false; }
+    bool isDirty() const { return textBuffer ? textBuffer->isDirty() : false; }
+    void markClean() { if (textBuffer) textBuffer->markClean(); }
     bool shouldClose() const { return wantsToClose; }
 
     // Text insertion (for drag-and-drop, etc.)
@@ -41,7 +41,6 @@ public:
 private:
     bool wantsToClose;
     bool leftMouseHeld;
-    bool dirty;
     double lastClickTime;
     double lastClickX;
     double lastClickY;
@@ -49,9 +48,10 @@ private:
     float scrollOffset;
     float contentHeight;
     int viewportHeight;
-    char* inputBuffer;
-    static const int INPUT_BUFFER_SIZE = 10 * 1024 * 1024;  // 10MB
-    int inputLength;
+
+    // TextBuffer is the single source of truth for document content
+    // All text operations go through this class
+    std::unique_ptr<TextBuffer> textBuffer;
     
     // Text editing state
     int cursorPos;
@@ -62,8 +62,7 @@ private:
     
     // Markdown rendering system
     std::unique_ptr<MarkdownRenderer> markdownRenderer;
-    std::unique_ptr<TextBuffer> textBuffer;
-    
+
     // FreeType font system
     FT_Library ft;
     FT_Face face;
