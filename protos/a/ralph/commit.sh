@@ -4,6 +4,12 @@
 #   ./commit.sh                    # Auto-generate commit message
 #   ./commit.sh "fix auth bug"     # Use hint for commit message context
 
+# Get the directory where this script lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source the formatting library
+source "$SCRIPT_DIR/claude-format.sh"
+
 MESSAGE_HINT="${1:-}"
 CURRENT_BRANCH=$(git branch --show-current)
 
@@ -54,7 +60,7 @@ echo "$PROMPT" | claude -p \
     --dangerously-skip-permissions \
     --output-format=stream-json \
     --model sonnet \
-    --verbose
+    --verbose 2>&1 | format_claude_json
 
 echo -e "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "Commit complete"

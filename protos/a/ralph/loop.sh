@@ -6,6 +6,12 @@
 #   ./loop.sh plan         # Plan mode, unlimited iterations
 #   ./loop.sh plan 5       # Plan mode, max 5 iterations
 
+# Get the directory where this script lives
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source the formatting library
+source "$SCRIPT_DIR/claude-format.sh"
+
 # Parse arguments
 if [ "$1" = "plan" ]; then
     # Plan mode
@@ -57,7 +63,7 @@ while true; do
         --dangerously-skip-permissions \
         --output-format=stream-json \
         --model opus \
-        --verbose
+        --verbose 2>&1 | format_claude_json
 
     # Push changes after each iteration
     git push origin "$CURRENT_BRANCH" || {
