@@ -58,25 +58,13 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport,
     for (const auto& op : displayList) {
         switch (op->getType()) {
             case PaintOpType::DrawRect:
-                executeDrawRect(static_cast<const DrawRectOp&>(*op));
+                executeDrawRect(static_cast<const DrawRectOp&>(*op), caretVisible);
                 break;
             case PaintOpType::DrawText:
                 executeDrawText(static_cast<const DrawTextOp&>(*op));
                 break;
             case PaintOpType::DrawImage:
                 executeDrawImage(static_cast<const DrawImageOp&>(*op));
-                break;
-            case PaintOpType::DrawDebugBorder:
-                executeDrawDebugBorder(static_cast<const DrawDebugBorderOp&>(*op));
-                break;
-            case PaintOpType::DrawCaret:
-                // Only draw caret if visible (for blinking)
-                if (caretVisible) {
-                    executeDrawCaret(static_cast<const DrawCaretOp&>(*op));
-                }
-                break;
-            case PaintOpType::DrawSelectionRect:
-                executeDrawSelectionRect(static_cast<const DrawSelectionRectOp&>(*op));
                 break;
             case PaintOpType::DrawLine:
                 executeDrawLine(static_cast<const DrawLineOp&>(*op));
@@ -87,14 +75,60 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport,
     batchRenderer->flush();
 }
 
-void Rasterizer::executeDrawRect(const DrawRectOp& op) {
+void Rasterizer::executeDrawRect(const DrawRectOp& op, bool caretVisible) {
     const Rect& rect = op.getRect();
     const Color& color = op.getColor();
+    RectRole role = op.getRole();
 
-    batchRenderer->drawRect(rect.position.x, rect.position.y,
-                            rect.size.width, rect.size.height,
-                            color.r / 255.0f, color.g / 255.0f,
-                            color.b / 255.0f, color.a / 255.0f);
+    float r = color.r / 255.0f, g = color.g / 255.0f;
+    float b = color.b / 255.0f, a = color.a / 255.0f;
+
+    switch (role) {
+        case RectRole::Background:
+        case RectRole::Selection:
+            // Filled rectangles
+            batchRenderer->drawRect(rect.position.x, rect.position.y,
+                                    rect.size.width, rect.size.height, r, g, b, a);
+            break;
+
+        case RectRole::Caret:
+            // Only draw caret if visible (for blinking)
+            if (caretVisible) {
+                batchRenderer->drawRect(rect.position.x, rect.position.y,
+                                        rect.size.width, rect.size.height, r, g, b, a);
+            }
+            break;
+
+        case RectRole::Border:
+            // Draw as stroke (4 thin rectangles)
+            {
+                float t = 1.0f;  // Border thickness
+                // Top
+                batchRenderer->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
+                // Bottom
+                batchRenderer->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
+                // Left
+                batchRenderer->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
+                // Right
+                batchRenderer->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
+            }
+            break;
+
+        case RectRole::Debug:
+            // Draw as debug border (thicker stroke)
+            {
+                float t = 2.0f;  // Debug border thickness
+                // Top
+                batchRenderer->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
+                // Bottom
+                batchRenderer->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
+                // Left
+                batchRenderer->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
+                // Right
+                batchRenderer->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
+            }
+            break;
+    }
 }
 
 void Rasterizer::executeDrawText(const DrawTextOp& op) {
@@ -439,43 +473,6 @@ FT_Face Rasterizer::getFaceForStyle(TextStyle style, bool monospace) {
         return faceItalic;
     }
     return faceRegular;
-}
-
-void Rasterizer::executeDrawDebugBorder(const DrawDebugBorderOp& op) {
-    const Rect& rect = op.getRect();
-    const Color& color = op.getColor();
-    float r = color.r / 255.0f, g = color.g / 255.0f;
-    float b = color.b / 255.0f, a = color.a / 255.0f;
-    float t = 2.0f;  // Border thickness
-
-    // Top
-    batchRenderer->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
-    // Bottom
-    batchRenderer->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
-    // Left
-    batchRenderer->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
-    // Right
-    batchRenderer->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
-}
-
-void Rasterizer::executeDrawCaret(const DrawCaretOp& op) {
-    const Point& pos = op.getPosition();
-    float height = op.getHeight();
-    const Color& color = op.getColor();
-
-    batchRenderer->drawRect(pos.x, pos.y, 2.0f, height,
-                            color.r / 255.0f, color.g / 255.0f,
-                            color.b / 255.0f, color.a / 255.0f);
-}
-
-void Rasterizer::executeDrawSelectionRect(const DrawSelectionRectOp& op) {
-    const Rect& rect = op.getRect();
-    const Color& color = op.getColor();
-
-    batchRenderer->drawRect(rect.position.x, rect.position.y,
-                            rect.size.width, rect.size.height,
-                            color.r / 255.0f, color.g / 255.0f,
-                            color.b / 255.0f, color.a / 255.0f);
 }
 
 void Rasterizer::executeDrawLine(const DrawLineOp& op) {

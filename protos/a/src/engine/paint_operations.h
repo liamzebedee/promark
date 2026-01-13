@@ -7,17 +7,25 @@
 
 struct Color {
     uint8_t r, g, b, a;
-    Color(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0, uint8_t a = 255) 
+    Color(uint8_t r = 0, uint8_t g = 0, uint8_t b = 0, uint8_t a = 255)
         : r(r), g(g), b(b), a(a) {}
+};
+
+// RectRole identifies the semantic purpose of a DrawRect operation.
+// This enables the rasterizer to handle different rect types uniformly
+// while preserving their rendering behavior (e.g., border vs filled).
+enum class RectRole {
+    Background,  // Solid background fill (e.g., table header, code block bg)
+    Selection,   // Text selection highlight (painted behind text)
+    Caret,       // Text cursor (thin vertical line)
+    Border,      // Element border (stroke, not fill)
+    Debug        // Debug visualization (layout bounds)
 };
 
 enum class PaintOpType {
     DrawRect,
     DrawText,
     DrawImage,
-    DrawDebugBorder,
-    DrawCaret,
-    DrawSelectionRect,
     DrawLine
 };
 
@@ -34,14 +42,20 @@ private:
 
 class DrawRectOp : public PaintOp {
 public:
+    // Full constructor with role (for explicit rect semantics)
+    DrawRectOp(const Rect& rect, const Color& color, RectRole role);
+
+    // Convenience constructor defaulting to Background role (backwards compatible)
     DrawRectOp(const Rect& rect, const Color& color);
-    
+
     const Rect& getRect() const;
     const Color& getColor() const;
-    
+    RectRole getRole() const;
+
 private:
     Rect rect;
     Color color;
+    RectRole role;
 };
 
 class DrawTextOp : public PaintOp {
@@ -87,46 +101,6 @@ private:
     uint32_t textureId;      // Pre-loaded texture ID (0 = load from imagePath)
     Rect sourceRect;         // Source rect for atlasing (normalized 0-1 coords)
     Color tintColor;         // Tint/multiply color (white = no tint)
-};
-
-class DrawDebugBorderOp : public PaintOp {
-public:
-    DrawDebugBorderOp(const Rect& rect, const Color& color);
-
-    const Rect& getRect() const;
-    const Color& getColor() const;
-
-private:
-    Rect rect;
-    Color color;
-};
-
-// Caret (text cursor) - thin vertical line
-class DrawCaretOp : public PaintOp {
-public:
-    DrawCaretOp(const Point& position, float height, const Color& color);
-
-    const Point& getPosition() const;
-    float getHeight() const;
-    const Color& getColor() const;
-
-private:
-    Point position;
-    float height;
-    Color color;
-};
-
-// Selection highlight rectangle (painted behind text)
-class DrawSelectionRectOp : public PaintOp {
-public:
-    DrawSelectionRectOp(const Rect& rect, const Color& color);
-
-    const Rect& getRect() const;
-    const Color& getColor() const;
-
-private:
-    Rect rect;
-    Color color;
 };
 
 // Line (for underlines, blockquote bars)

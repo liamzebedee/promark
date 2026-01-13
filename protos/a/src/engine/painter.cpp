@@ -337,7 +337,7 @@ Color Painter::getBackgroundColor(const MarkdownObject* object) {
 void Painter::paintDebugBorder(const LayoutObject* layoutObject, DisplayList& displayList) {
     const Rect& rect = layoutObject->getRect();
     Color debugColor = Color(255, 0, 255, 255);
-    auto debugOp = std::make_unique<DrawDebugBorderOp>(rect, debugColor);
+    auto debugOp = std::make_unique<DrawRectOp>(rect, debugColor, RectRole::Debug);
     displayList.push_back(std::move(debugOp));
 }
 
@@ -414,7 +414,9 @@ void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
     }
 
     Color caretColor(0, 0, 0, 255);
-    auto caretOp = std::make_unique<DrawCaretOp>(Point(caretX, caretY), caretHeight, caretColor);
+    // Create a thin vertical rect for the caret (2px wide)
+    Rect caretRect(caretX, caretY, 2.0f, caretHeight);
+    auto caretOp = std::make_unique<DrawRectOp>(caretRect, caretColor, RectRole::Caret);
     displayList.push_back(std::move(caretOp));
 }
 
@@ -470,7 +472,7 @@ void Painter::paintSelection(DisplayList& displayList, const CaretState& caret,
                         }
 
                         Rect selRect(x1, rect.position.y + line.yOffset, x2 - x1, lineHeight);
-                        auto selOp = std::make_unique<DrawSelectionRectOp>(selRect, selColor);
+                        auto selOp = std::make_unique<DrawRectOp>(selRect, selColor, RectRole::Selection);
                         displayList.push_back(std::move(selOp));
                     }
                     currentPos += len;
@@ -480,7 +482,7 @@ void Painter::paintSelection(DisplayList& displayList, const CaretState& caret,
 
             // Fallback for non-wrapped or non-text objects
             Rect selRect = computeSelectionRect(layout, localStart, localEnd);
-            auto selOp = std::make_unique<DrawSelectionRectOp>(selRect, selColor);
+            auto selOp = std::make_unique<DrawRectOp>(selRect, selColor, RectRole::Selection);
             displayList.push_back(std::move(selOp));
         }
         currentPos += len;

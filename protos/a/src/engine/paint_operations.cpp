@@ -10,8 +10,14 @@ PaintOpType PaintOp::getType() const {
     return type;
 }
 
-DrawRectOp::DrawRectOp(const Rect& rect, const Color& color) 
-    : PaintOp(PaintOpType::DrawRect), rect(rect), color(color) {
+// Full constructor with explicit role
+DrawRectOp::DrawRectOp(const Rect& rect, const Color& color, RectRole role)
+    : PaintOp(PaintOpType::DrawRect), rect(rect), color(color), role(role) {
+}
+
+// Convenience constructor defaults to Background role (backwards compatible)
+DrawRectOp::DrawRectOp(const Rect& rect, const Color& color)
+    : PaintOp(PaintOpType::DrawRect), rect(rect), color(color), role(RectRole::Background) {
 }
 
 const Rect& DrawRectOp::getRect() const {
@@ -20,6 +26,10 @@ const Rect& DrawRectOp::getRect() const {
 
 const Color& DrawRectOp::getColor() const {
     return color;
+}
+
+RectRole DrawRectOp::getRole() const {
+    return role;
 }
 
 DrawTextOp::DrawTextOp(const Point& position, const std::string& text, const Color& color,
@@ -83,48 +93,6 @@ const Rect& DrawImageOp::getSourceRect() const {
 
 const Color& DrawImageOp::getTintColor() const {
     return tintColor;
-}
-
-DrawDebugBorderOp::DrawDebugBorderOp(const Rect& rect, const Color& color) 
-    : PaintOp(PaintOpType::DrawDebugBorder), rect(rect), color(color) {
-}
-
-const Rect& DrawDebugBorderOp::getRect() const {
-    return rect;
-}
-
-const Color& DrawDebugBorderOp::getColor() const {
-    return color;
-}
-
-// DrawCaretOp
-DrawCaretOp::DrawCaretOp(const Point& position, float height, const Color& color)
-    : PaintOp(PaintOpType::DrawCaret), position(position), height(height), color(color) {
-}
-
-const Point& DrawCaretOp::getPosition() const {
-    return position;
-}
-
-float DrawCaretOp::getHeight() const {
-    return height;
-}
-
-const Color& DrawCaretOp::getColor() const {
-    return color;
-}
-
-// DrawSelectionRectOp
-DrawSelectionRectOp::DrawSelectionRectOp(const Rect& rect, const Color& color)
-    : PaintOp(PaintOpType::DrawSelectionRect), rect(rect), color(color) {
-}
-
-const Rect& DrawSelectionRectOp::getRect() const {
-    return rect;
-}
-
-const Color& DrawSelectionRectOp::getColor() const {
-    return color;
 }
 
 // DrawLineOp

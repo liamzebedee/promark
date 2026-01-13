@@ -25,12 +25,9 @@ private:
         uint32_t textureId;
     };
 
-    void executeDrawRect(const DrawRectOp& op);
+    void executeDrawRect(const DrawRectOp& op, bool caretVisible);
     void executeDrawText(const DrawTextOp& op);
     void executeDrawImage(const DrawImageOp& op);
-    void executeDrawDebugBorder(const DrawDebugBorderOp& op);
-    void executeDrawCaret(const DrawCaretOp& op);
-    void executeDrawSelectionRect(const DrawSelectionRectOp& op);
     void executeDrawLine(const DrawLineOp& op);
 
     void loadImage(const std::string& imagePath);

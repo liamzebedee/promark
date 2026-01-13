@@ -86,16 +86,24 @@ These must be resolved first as they block correct implementation of other featu
 ## P1 - HIGH PRIORITY FOUNDATION WORK
 
 ### P1-1: Create Unified DrawRect with RectRole Enum
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: None
-- **Problem**: 4 separate rect types exist:
-  - `DrawRectOp` (`paint_operations.h:37-47`)
-  - `DrawDebugBorderOp` (`paint_operations.h:98-108`)
-  - `DrawSelectionRectOp` (`paint_operations.h:125-136`)
-  - `DrawCaretOp` (`paint_operations.h:110-123`)
+- **Solution**: Created unified DrawRect with RectRole enum:
+  - Added `RectRole` enum with values: Background, Selection, Caret, Border, Debug
+  - Extended `DrawRectOp` with role field and getRole() accessor
+  - Added convenience constructor (defaults to Background role) for backwards compatibility
+  - Removed separate `PaintOpType` enum values for DrawDebugBorder, DrawCaret, DrawSelectionRect
+  - Deleted `DrawDebugBorderOp`, `DrawCaretOp`, `DrawSelectionRectOp` classes
+  - Updated painter.cpp to use DrawRectOp with appropriate roles
+  - Updated rasterizer to handle all roles in unified executeDrawRect():
+    - Background/Selection: filled rectangle
+    - Caret: filled rectangle (respects visibility for blinking)
+    - Border: 1px stroke (4 thin rectangles)
+    - Debug: 2px stroke for layout visualization
+  - All 12 tests pass
 - **Spec Reference**: `specs/03-rendering-pipeline.md` - unified DrawRect with role field
-- **Files**: `src/engine/paint_operations.h`
+- **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/painter.cpp`, `src/engine/rasterizer.h`, `src/engine/rasterizer.cpp`
 
 ### P1-2: Convert Flat DisplayList to Hierarchical PaintTree
 - **Status**: NOT STARTED
@@ -300,10 +308,10 @@ These must be resolved first as they block correct implementation of other featu
 - **Location**: Was at `paint_operations.h:83-96`, now removed
 
 ### P3-5: Consolidate DrawDebugBorderOp, DrawSelectionRectOp, DrawCaretOp
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: P1-1
-- **Action**: Merge into unified DrawRect with role field
+- **Solution**: Merged into unified DrawRect with role field as part of P1-1 implementation. The separate classes have been deleted and all usages now use `DrawRectOp` with the appropriate `RectRole`.
 
 ### P3-6: Remove domToRaw/rawToDOM Functions
 - **Status**: NOT STARTED
@@ -347,7 +355,7 @@ P0-5 (Inline tree) ───┬──> P2-2 (LineBreak/ThematicBreak)
                       ├──> P3-1 (Delete InlineLayoutObject) ──> P3-2 (Delete enum)
                       └──> P2-4 (layoutInlineFlow)
 
-P1-1 (DrawRect) ──────> P3-5 (Consolidate rect ops)
+P1-1 (DrawRect) ──────> P3-5 (Consolidate rect ops) [BOTH COMPLETE]
 
 P1-3 (FontProvider) ──> P1-6 (Pre-shaped glyph data)
 ```
@@ -359,7 +367,7 @@ P1-3 (FontProvider) ──> P1-6 (Pre-shaped glyph data)
 These groups can be worked on concurrently:
 
 **Group A - Rendering Foundation:**
-- P0-3, P1-1, P1-7
+- P0-3, ~~P1-1~~, ~~P1-7~~ (P1-1 and P1-7 complete)
 
 **Group B - Text Model Foundation:**
 - P0-1 → P0-2
@@ -384,7 +392,7 @@ These groups can be worked on concurrently:
 | `markdown_parser.cpp` | 6 stub methods, annotation model for inline formatting |
 | `layout_objects.cpp` | Split authority (4 objects self-position), I/O during layout |
 | `layout_engine.cpp` | stub layoutInlineFlow() |
-| `paint_operations.h` | 4 rect types, flat DisplayList |
+| `paint_operations.h` | Flat DisplayList (unified DrawRect with RectRole complete) |
 | `painter.cpp` | Queries upstream for MarkdownObjectType |
 | `rasterizer.cpp` | Direct GL calls, no culling |
 | `glyph_atlas.cpp` | Standalone with GL calls (should be in backend) |
@@ -394,4 +402,4 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14*
+*Last updated: 2026-01-14 - P1-1 (Unified DrawRect with RectRole) and P3-5 (Consolidate rect ops) completed*
