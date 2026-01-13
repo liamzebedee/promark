@@ -28,7 +28,9 @@ public:
                   float r, float g, float b, float a);
     void drawRect(float x, float y, float w, float h,
                   float r, float g, float b, float a);
-    void drawImage(float x, float y, float w, float h, unsigned int textureId);
+    void drawImage(float x, float y, float w, float h, unsigned int textureId,
+                   float srcU0, float srcV0, float srcU1, float srcV1,
+                   float tintR, float tintG, float tintB, float tintA);
 
     // Text rendering with atlas
     void drawText(const std::string& text, float x, float y,

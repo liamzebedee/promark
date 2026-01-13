@@ -152,12 +152,17 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/paint_operations.h`, `src/engine/painter.cpp`
 
 ### P1-7: Upgrade DrawImage with Texture ID, Source Rect, Tint
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: None
-- **Problem**: `DrawImageOp` only has `destRect` and `imagePath` (`paint_operations.h:78-81`)
-- **Required**: texture ID, source rect (for atlasing), tint color
-- **Files**: `src/engine/paint_operations.h`
+- **Solution**: Extended DrawImageOp with pre-loaded texture support:
+  - Added `textureId` field (0 = load from path, non-zero = pre-loaded)
+  - Added `sourceRect` field for texture atlasing (normalized 0-1 coordinates)
+  - Added `tintColor` field for image colorization/effects
+  - Updated BatchRenderer::drawImage() to use source rect and tint
+  - Rasterizer uses textureId if provided, falls back to path-based loading
+  - Backwards compatible: convenience constructor defaults to full rect, white tint
+- **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/rasterizer.cpp`, `src/engine/batch_renderer.h`, `src/engine/batch_renderer.cpp`
 
 ### P1-8: Implement Viewport Culling in Rasterization
 - **Status**: NOT STARTED

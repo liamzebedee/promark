@@ -240,7 +240,9 @@ void BatchRenderer::drawRect(float x, float y, float w, float h,
     vertices.insert(vertices.end(), v, v + 6);
 }
 
-void BatchRenderer::drawImage(float x, float y, float w, float h, unsigned int textureId) {
+void BatchRenderer::drawImage(float x, float y, float w, float h, unsigned int textureId,
+                               float srcU0, float srcV0, float srcU1, float srcV1,
+                               float tintR, float tintG, float tintB, float tintA) {
     // Flush any pending geometry first
     flush();
 
@@ -254,14 +256,14 @@ void BatchRenderer::drawImage(float x, float y, float w, float h, unsigned int t
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textureId);
 
-    // Build quad vertices
+    // Build quad vertices using source rect for UVs and tint for color
     Vertex v[6] = {
-        {x,     y,     0, 0, 1, 1, 1, 1},
-        {x + w, y,     1, 0, 1, 1, 1, 1},
-        {x + w, y + h, 1, 1, 1, 1, 1, 1},
-        {x,     y,     0, 0, 1, 1, 1, 1},
-        {x + w, y + h, 1, 1, 1, 1, 1, 1},
-        {x,     y + h, 0, 1, 1, 1, 1, 1},
+        {x,     y,     srcU0, srcV0, tintR, tintG, tintB, tintA},
+        {x + w, y,     srcU1, srcV0, tintR, tintG, tintB, tintA},
+        {x + w, y + h, srcU1, srcV1, tintR, tintG, tintB, tintA},
+        {x,     y,     srcU0, srcV0, tintR, tintG, tintB, tintA},
+        {x + w, y + h, srcU1, srcV1, tintR, tintG, tintB, tintA},
+        {x,     y + h, srcU0, srcV1, tintR, tintG, tintB, tintA},
     };
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);

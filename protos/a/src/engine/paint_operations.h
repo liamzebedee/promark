@@ -68,14 +68,25 @@ private:
 
 class DrawImageOp : public PaintOp {
 public:
+    // Full constructor with all fields
+    DrawImageOp(const Rect& destRect, const std::string& imagePath,
+                uint32_t textureId, const Rect& sourceRect, const Color& tintColor);
+
+    // Convenience constructor for path-based loading (textureId=0, full source rect, no tint)
     DrawImageOp(const Rect& destRect, const std::string& imagePath);
-    
+
     const Rect& getDestRect() const;
     const std::string& getImagePath() const;
-    
+    uint32_t getTextureId() const;
+    const Rect& getSourceRect() const;
+    const Color& getTintColor() const;
+
 private:
     Rect destRect;
     std::string imagePath;
+    uint32_t textureId;      // Pre-loaded texture ID (0 = load from imagePath)
+    Rect sourceRect;         // Source rect for atlasing (normalized 0-1 coords)
+    Color tintColor;         // Tint/multiply color (white = no tint)
 };
 
 class DrawDebugBorderOp : public PaintOp {

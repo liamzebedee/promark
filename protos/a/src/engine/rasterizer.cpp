@@ -119,21 +119,31 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
 }
 
 void Rasterizer::executeDrawImage(const DrawImageOp& op) {
-    const std::string& imagePath = op.getImagePath();
+    const Rect& rect = op.getDestRect();
+    const Rect& srcRect = op.getSourceRect();
+    const Color& tint = op.getTintColor();
 
-    // Load image if not cached
-    if (imageCache.find(imagePath) == imageCache.end()) {
-        loadImage(imagePath);
+    // Determine which texture to use
+    uint32_t textureId = op.getTextureId();
+    if (textureId == 0) {
+        // No pre-loaded texture, load from image path
+        const std::string& imagePath = op.getImagePath();
+        if (imageCache.find(imagePath) == imageCache.end()) {
+            loadImage(imagePath);
+        }
+        if (imageCache.find(imagePath) != imageCache.end()) {
+            textureId = imageCache[imagePath].textureId;
+        }
     }
 
-    // Draw image using batch renderer
-    if (imageCache.find(imagePath) != imageCache.end()) {
-        const ImageData& imgData = imageCache[imagePath];
-        const Rect& rect = op.getDestRect();
-
+    if (textureId != 0) {
         batchRenderer->drawImage(rect.position.x, rect.position.y,
                                   rect.size.width, rect.size.height,
-                                  imgData.textureId);
+                                  textureId,
+                                  srcRect.position.x, srcRect.position.y,
+                                  srcRect.size.width, srcRect.size.height,
+                                  tint.r / 255.0f, tint.g / 255.0f,
+                                  tint.b / 255.0f, tint.a / 255.0f);
     }
 }
 

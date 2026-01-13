@@ -52,8 +52,17 @@ bool DrawTextOp::isMonospace() const {
     return monospace;
 }
 
-DrawImageOp::DrawImageOp(const Rect& destRect, const std::string& imagePath) 
-    : PaintOp(PaintOpType::DrawImage), destRect(destRect), imagePath(imagePath) {
+// Full constructor with all fields
+DrawImageOp::DrawImageOp(const Rect& destRect, const std::string& imagePath,
+                         uint32_t textureId, const Rect& sourceRect, const Color& tintColor)
+    : PaintOp(PaintOpType::DrawImage), destRect(destRect), imagePath(imagePath),
+      textureId(textureId), sourceRect(sourceRect), tintColor(tintColor) {
+}
+
+// Convenience constructor: defaults to load-from-path, full source rect, white tint
+DrawImageOp::DrawImageOp(const Rect& destRect, const std::string& imagePath)
+    : PaintOp(PaintOpType::DrawImage), destRect(destRect), imagePath(imagePath),
+      textureId(0), sourceRect(0, 0, 1, 1), tintColor(255, 255, 255, 255) {
 }
 
 const Rect& DrawImageOp::getDestRect() const {
@@ -62,6 +71,18 @@ const Rect& DrawImageOp::getDestRect() const {
 
 const std::string& DrawImageOp::getImagePath() const {
     return imagePath;
+}
+
+uint32_t DrawImageOp::getTextureId() const {
+    return textureId;
+}
+
+const Rect& DrawImageOp::getSourceRect() const {
+    return sourceRect;
+}
+
+const Color& DrawImageOp::getTintColor() const {
+    return tintColor;
 }
 
 DrawDebugBorderOp::DrawDebugBorderOp(const Rect& rect, const Color& color) 
