@@ -271,6 +271,21 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
                 scrollOffset = newCursorY - cursorScreenY;
                 if (scrollOffset < 0) scrollOffset = 0;
                 return;
+            } else if (key == GLFW_KEY_X) {
+                cutSelection();
+                return;
+            } else if (key == GLFW_KEY_B) {
+                applyBold();
+                return;
+            } else if (key == GLFW_KEY_I) {
+                applyItalic();
+                return;
+            } else if (key == GLFW_KEY_K) {
+                applyLink();
+                return;
+            } else if (key == GLFW_KEY_GRAVE_ACCENT) {
+                applyInlineCode();
+                return;
             }
         }
 
@@ -893,6 +908,27 @@ void Engine::copySelection() {
     int end = std::max(selectionStart, selectionEnd);
     std::string selectedText = textBuffer->getText().substr(start, end - start);
     Clipboard::setText(selectedText);
+}
+
+void Engine::cutSelection() {
+    if (!hasSelection) {
+        return;
+    }
+
+    // Copy to clipboard first
+    int start = std::min(selectionStart, selectionEnd);
+    int end = std::max(selectionStart, selectionEnd);
+    std::string selectedText = textBuffer->getText().substr(start, end - start);
+    Clipboard::setText(selectedText);
+
+    // Then delete the selection
+    recordDelete(start, selectedText);
+    textBuffer->deleteText(start, end - start);
+    cursorPos = start;
+    goalColumn = getColumnInLine(cursorPos);
+    hasSelection = false;
+
+    ensureCursorVisible();
 }
 
 void Engine::paste() {
@@ -1780,6 +1816,17 @@ void Engine::applyLink() {
         selectionEnd = cursorPos + 5;  // "text" is 4 chars, end is exclusive
         cursorPos = selectionEnd;
         hasSelection = true;
+    }
+}
+
+void Engine::applyInlineCode() {
+    if (hasSelection) {
+        wrapSelection("`", "`");
+    } else {
+        // Insert `` markers and place cursor between them
+        recordInsert(cursorPos, "``");
+        textBuffer->insertText(cursorPos, "``");
+        cursorPos += 1;  // Place cursor between ` markers
     }
 }
 

@@ -104,6 +104,7 @@ private:
     // Clipboard operations
     void selectAll();
     void copySelection();
+    void cutSelection();
     void paste();
 
     // Scroll helpers
@@ -135,6 +136,7 @@ private:
     void applyItalic();
     void applyHeading(int level);
     void applyLink();
+    void applyInlineCode();
     void wrapSelection(const std::string& before, const std::string& after);
 
     // Cursor animation
