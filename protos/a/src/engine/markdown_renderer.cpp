@@ -471,7 +471,7 @@ float MarkdownRenderer::getCursorY(int domPos) const {
     return 0;
 }
 
-void MarkdownRenderer::getCursorXY(int domPos, float& outX, float& outY) const {
+void MarkdownRenderer::getCursorXY(int domPos, float& outX, float& outY, bool preferCurrentAtBoundary) const {
     outX = 0;
     outY = 0;
     if (!layoutTree) return;
@@ -485,24 +485,24 @@ void MarkdownRenderer::getCursorXY(int domPos, float& outX, float& outY) const {
         int domLen = layout->getDOMLength();
 
         // Check if position is in this layout's range.
-        // At boundaries, prefer the layout where cursor is at START (not END).
-        // This ensures: 1) After Enter, caret shows at start of new line
-        //               2) After typing, caret shows at end of text (unless at exact boundary)
+        // At boundaries between layouts, we have a choice:
+        // - preferCurrentAtBoundary=true: use <= (for caret rendering after typing)
+        // - preferCurrentAtBoundary=false: use < (for navigation, original behavior)
         //
-        // Logic: Use strict < unless this is the last layout, OR the next layout
-        // doesn't start at exactly this position (meaning we're within current layout).
+        // This ensures correct behavior in both cases:
+        // 1) After typing, caret shows at end of typed text (use <=)
+        // 2) After navigation/Enter, cursor is at start of new line (use <)
         bool isLast = (i == textLayouts.size() - 1);
-        bool nextLayoutStartsHere = !isLast && (i + 1 < textLayouts.size()) &&
-                                    (textLayouts[i + 1].second == domPos);
-
-        // If we're at the exact end of this layout AND next layout starts here,
-        // let the next layout handle it (cursor at start of next, not end of current).
-        bool atExactEnd = (domPos == layoutDOMPos + domLen);
-        bool preferNext = atExactEnd && nextLayoutStartsHere;
-
-        bool inRange = (domPos >= layoutDOMPos) &&
-                       (isLast ? (domPos <= layoutDOMPos + domLen) :
-                        (preferNext ? (domPos < layoutDOMPos + domLen) : (domPos <= layoutDOMPos + domLen)));
+        bool inRange;
+        if (preferCurrentAtBoundary) {
+            // Always include the upper bound - cursor at end of layout stays in this layout
+            inRange = (domPos >= layoutDOMPos) && (domPos <= layoutDOMPos + domLen);
+        } else {
+            // Original logic: use strict < unless last layout
+            // This makes boundary positions match the NEXT layout
+            inRange = (domPos >= layoutDOMPos) &&
+                      (isLast ? (domPos <= layoutDOMPos + domLen) : (domPos < layoutDOMPos + domLen));
+        }
 
         if (inRange) {
             const Rect& rect = layout->getRect();

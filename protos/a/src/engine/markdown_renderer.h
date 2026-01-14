@@ -68,7 +68,9 @@ public:
     float getCursorY(int domPos) const;
 
     // Get cursor X/Y position for animation
-    void getCursorXY(int domPos, float& outX, float& outY) const;
+    // preferCurrentAtBoundary: at exact layout boundaries, prefer current layout (for caret after typing)
+    //                          vs next layout (for navigation). Default false for backward compat.
+    void getCursorXY(int domPos, float& outX, float& outY, bool preferCurrentAtBoundary = false) const;
 
     // Get link URL at position (returns empty string if not on a link)
     std::string getLinkAtPosition(float x, float y) const;
