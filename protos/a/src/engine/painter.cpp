@@ -4,7 +4,6 @@
 #include "utf8.h"
 #include <cstring>
 #include <algorithm>
-#include <iostream>  // DEBUG
 
 Painter::Painter() {
 }
@@ -456,15 +455,9 @@ void Painter::paintCaret(DisplayList& displayList, const CaretState& caret,
 
     // Use animated position if enabled
     if (caret.useAnimatedPosition) {
-        std::cerr << "DEBUG paintCaret: using animated pos (" << caret.animatedCaretX
-                  << "," << caret.animatedCaretY << ") vs computed ("
-                  << caretX << "," << caretY << ")" << std::endl;
         caretX = caret.animatedCaretX;
         caretY = caret.animatedCaretY;
     }
-
-    std::cerr << "DEBUG paintCaret: final caret at (" << caretX << "," << caretY
-              << ") height=" << caretHeight << std::endl;
     Color caretColor(0, 0, 0, 255);
     // Create a thin vertical rect for the caret (2px wide)
     Rect caretRect(caretX, caretY, 2.0f, caretHeight);

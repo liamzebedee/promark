@@ -27,6 +27,28 @@
 - `tests/test_keyboard_shortcuts.cpp` - Added 7 tests for new shortcuts
 - `Makefile` - Added test file to build
 
+### Caret and Selection in Blockquotes (2026-01-14)
+
+**Issue:** Caret and selection highlights were not visible inside blockquotes, making it difficult to edit blockquote content.
+
+**Root Cause:** The rasterizer was drawing display items in incorrect z-order:
+1. Selection and caret were drawn first (from root artifact's displayItems)
+2. Then children (content tree including blockquote backgrounds) were drawn on top
+
+This caused blockquote backgrounds to cover both selection highlights and the caret.
+
+**Solution:**
+Changed rasterizer to draw items in correct z-order:
+1. Non-selection, non-caret items from artifact
+2. Recursively process children (content including backgrounds)
+3. Selection (after backgrounds, visible on top)
+4. Caret (last, on top of everything)
+
+**Files Modified:**
+- `src/engine/rasterizer.cpp` - Fixed render order for selection/caret
+- `tests/test_blockquote_caret.cpp` - Added 2 tests for blockquote caret/selection
+- `Makefile` - Added test file to build
+
 ### Keyboard Navigation in Long Documents (2026-01-14)
 
 **Issue:** Up/Down arrow keys got stuck at certain positions when navigating long documents, particularly around headings.
