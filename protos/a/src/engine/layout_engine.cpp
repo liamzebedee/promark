@@ -173,8 +173,15 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
                 }
             }
             if (isEmpty) {
-                // Still layout it (for cursor positioning) but at zero height
+                // Still layout children (for cursor positioning) but at zero height
+                // The empty TextLayoutObject needs layout() called to create its LineInfo
+                Size childAvailable(availableSpace.width - marginLeft * 2, availableSpace.height - currentY);
+                for (const auto& grandchild : child->getChildren()) {
+                    grandchild->layout(childAvailable);
+                }
                 child->setRect(Rect(marginLeft, currentY, availableSpace.width - marginLeft * 2, 0));
+                // Propagate position to children (TextLayoutObject) for cursor positioning
+                propagatePositionToChildren(child.get(), marginLeft, currentY);
                 continue;
             }
         }

@@ -993,6 +993,21 @@ continue_parsing:
         pos = nextLineStart;
     }
 
+    // Handle trailing newline: if text ends with \n, create empty paragraph for cursor position
+    // This allows the cursor to be placed on the new empty line after the final newline
+    if (!text.empty() && text.back() == '\n') {
+        auto emptyParagraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
+        emptyParagraph->setRawRange(static_cast<int>(textLen), static_cast<int>(textLen));
+
+        auto emptyText = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+        emptyText->setText("");
+        emptyText->setRawRange(static_cast<int>(textLen), static_cast<int>(textLen));
+        emptyText->setTextOffset(0);
+        emptyParagraph->addChild(std::move(emptyText));
+
+        document->addChild(std::move(emptyParagraph));
+    }
+
     return document;
 }
 

@@ -8,6 +8,64 @@
 // Expected: After pressing Enter, caret appears at start of new line
 // Actual: Caret appears in top-left area of document (wrong position)
 
+// Programmatic test: Verify caret X/Y position after Enter
+// This test asserts on actual coordinates, not just screenshots
+TestResult test_caret_position_programmatic(TestContext& ctx) {
+    std::vector<std::string> screenshots;
+    Engine* engine = ctx.getEngine();
+
+    // Set up simple content
+    std::string content = "Hello";
+    engine->setContent(content);
+
+    // Render to initialize layout
+    engine->render(ctx.getWidth(), ctx.getHeight());
+
+    // Place cursor at end of "Hello" (position 5)
+    // Click far right to position at end
+    ctx.simulateClick(200, 80);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+
+    screenshots.push_back(ctx.captureScreenshot("caret_programmatic", 1));
+
+    // Press Enter
+    ctx.simulateKey(GLFW_KEY_ENTER);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+
+    std::string afterEnter = engine->getContent();
+
+    // Verify Enter actually inserted a newline
+    if (afterEnter.find('\n') == std::string::npos) {
+        return TestResult{"test_caret_position_programmatic", false,
+            "Enter key did not insert newline", screenshots};
+    }
+
+    screenshots.push_back(ctx.captureScreenshot("caret_programmatic", 2));
+
+    // Type a character - should appear on the new line
+    ctx.simulateKey(GLFW_KEY_X);
+    engine->render(ctx.getWidth(), ctx.getHeight());
+
+    std::string afterX = engine->getContent();
+
+    screenshots.push_back(ctx.captureScreenshot("caret_programmatic", 3));
+
+    // Verify x appeared after the newline (on second line)
+    size_t newlinePos = afterX.find('\n');
+    if (newlinePos == std::string::npos) {
+        return TestResult{"test_caret_position_programmatic", false,
+            "Newline disappeared after typing X", screenshots};
+    }
+
+    // The 'x' should be right after the newline
+    if (newlinePos + 1 >= afterX.length() || afterX[newlinePos + 1] != 'x') {
+        std::string msg = "Expected 'x' after newline, got content: '" + afterX + "'";
+        return TestResult{"test_caret_position_programmatic", false, msg, screenshots};
+    }
+
+    TEST_PASS();
+}
+
 TestResult test_bug_caret_position_after_enter(TestContext& ctx) {
     std::vector<std::string> screenshots;
     Engine* engine = ctx.getEngine();
@@ -134,6 +192,7 @@ TestResult test_bug_caret_enter_in_middle(TestContext& ctx) {
     TEST_PASS();
 }
 
+REGISTER_TEST(caret_position_programmatic, test_caret_position_programmatic);
 REGISTER_TEST(bug_caret_position_after_enter, test_bug_caret_position_after_enter);
 REGISTER_TEST(bug_caret_position_during_typing, test_bug_caret_position_during_typing);
 REGISTER_TEST(bug_caret_enter_in_middle, test_bug_caret_enter_in_middle);
