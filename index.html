@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MD Editor</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+        h1 { color: #fff; font-weight: 400; font-size: 24px; }
+        #canvas {
+            border-radius: 8px;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+            width: 900px;
+            height: 700px;
+        }
+        .status { color: #666; font-size: 14px; }
+        .status.loading { color: #f90; }
+        .status.ready { color: #4a4; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MD Editor</h1>
+        <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+        <textarea id="clipboard-helper" style="position:absolute;left:-9999px;"></textarea>
+        <div id="status" class="status loading">Loading...</div>
+    </div>
+
+    <script>
+        // GLFW key codes
+        var GLFW_PRESS = 1;
+        var GLFW_MOD_SHIFT = 0x0001;
+        var GLFW_MOD_CONTROL = 0x0002;
+        var GLFW_MOD_ALT = 0x0004;
+        var GLFW_MOD_SUPER = 0x0008;
+
+        var KEY_MAP = {
+            'Backspace': 259, 'Delete': 261,
+            'ArrowRight': 262, 'ArrowLeft': 263, 'ArrowDown': 264, 'ArrowUp': 265,
+            'Enter': 257, 'Tab': 258, 'Escape': 256,
+            'Home': 268, 'End': 269
+        };
+
+        var canvas = document.getElementById('canvas');
+        var clipboardHelper = document.getElementById('clipboard-helper');
+        var moduleReady = false;
+
+        // Module configuration
+        var Module = {
+            canvas: canvas,
+            doNotCaptureKeyboard: true,
+            print: function(t) { console.log(t); },
+            printErr: function(t) { console.error(t); },
+            onRuntimeInitialized: function() {
+                moduleReady = true;
+                document.getElementById('status').textContent = 'Ready';
+                document.getElementById('status').className = 'status ready';
+                canvas.focus();
+                console.log('Module ready, exports:', !!Module._handleKey, !!Module._insertText);
+            }
+        };
+
+        // Helper to call C++ insertText
+        function insertText(text) {
+            if (!moduleReady || !Module._insertText) return;
+            var len = Module.lengthBytesUTF8(text) + 1;
+            var ptr = Module._malloc(len);
+            Module.stringToUTF8(text, ptr, len);
+            Module._insertText(ptr);
+            Module._free(ptr);
+        }
+
+        // Helper to call C++ handleKey
+        function handleKey(key, mods) {
+            if (!moduleReady || !Module._handleKey) return;
+            Module._handleKey(key, GLFW_PRESS, mods);
+        }
+
+        // Use hidden textarea for clipboard operations
+        clipboardHelper.addEventListener('paste', function(e) {
+            console.log('PASTE EVENT on textarea', e.clipboardData);
+            e.preventDefault();
+            var text = e.clipboardData.getData('text/plain');
+            console.log('Paste text:', text);
+            if (text && moduleReady) insertText(text);
+            canvas.focus();
+        });
+
+        // Keyboard handler
+        canvas.addEventListener('keydown', function(e) {
+            if (!moduleReady) return;
+
+            var isCmdOrCtrl = e.ctrlKey || e.metaKey;
+            var key = e.key.toLowerCase();
+
+            // Copy: get selected text, put in textarea, trigger copy
+            if (isCmdOrCtrl && key === 'c') {
+                var text = Module.UTF8ToString(Module._getSelectedText());
+                if (text) {
+                    navigator.clipboard.writeText(text).catch(function() {});
+                }
+                e.preventDefault();
+                return;
+            }
+
+            // Paste: use async clipboard API
+            if (isCmdOrCtrl && key === 'v') {
+                console.log('CMD+V detected');
+                e.preventDefault();
+                navigator.clipboard.readText().then(function(text) {
+                    console.log('Clipboard read:', text);
+                    if (text) insertText(text);
+                }).catch(function(err) {
+                    console.error('Clipboard read failed:', err);
+                });
+                return;
+            }
+
+            // Cut: copy then delete
+            if (isCmdOrCtrl && key === 'x') {
+                var text = Module.UTF8ToString(Module._getSelectedText());
+                if (text) {
+                    navigator.clipboard.writeText(text).catch(function() {});
+                    handleKey(KEY_MAP['Backspace'], 0);
+                }
+                e.preventDefault();
+                return;
+            }
+
+            e.preventDefault();
+
+            var mods = 0;
+            if (e.shiftKey) mods |= GLFW_MOD_SHIFT;
+            if (e.ctrlKey) mods |= GLFW_MOD_CONTROL;
+            if (e.altKey) mods |= GLFW_MOD_ALT;
+            if (e.metaKey) mods |= GLFW_MOD_SUPER;
+
+            // Special keys -> handleKey
+            if (KEY_MAP[e.key]) {
+                handleKey(KEY_MAP[e.key], mods);
+                return;
+            }
+
+            // Any key with Cmd/Ctrl -> handleKey (for shortcuts)
+            if (isCmdOrCtrl && e.key.length === 1) {
+                handleKey(e.key.toUpperCase().charCodeAt(0), mods);
+                return;
+            }
+
+            // Printable character -> insertText (handles UTF-8)
+            if (e.key.length === 1) {
+                insertText(e.key);
+            }
+        });
+
+        // Prevent keypress default
+        canvas.addEventListener('keypress', function(e) {
+            e.preventDefault();
+        });
+
+        // Keep focus
+        canvas.addEventListener('click', function() {
+            canvas.focus();
+        });
+
+        // Public API
+        window.MDEditor = {
+            setContent: function(text) {
+                if (!moduleReady) return;
+                var len = Module.lengthBytesUTF8(text) + 1;
+                var ptr = Module._malloc(len);
+                Module.stringToUTF8(text, ptr, len);
+                Module._setContent(ptr);
+                Module._free(ptr);
+            },
+            getContent: function() {
+                if (!moduleReady) return '';
+                return Module.UTF8ToString(Module._getContent());
+            }
+        };
+    </script>
+    <script async src="mdeditor.js"></script>
+</body>
+</html>
