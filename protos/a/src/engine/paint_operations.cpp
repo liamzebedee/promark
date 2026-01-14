@@ -32,9 +32,19 @@ RectRole DrawRectOp::getRole() const {
     return role;
 }
 
+// P1-6: Constructor with pre-shaped glyph data (preferred for performance)
+DrawTextOp::DrawTextOp(const Point& position, const ShapedTextRun& shapedText, const Color& color,
+                       float fontSize, TextStyle style, bool monospace)
+    : PaintOp(PaintOpType::DrawText), position(position), text(shapedText.originalText),
+      shapedText(shapedText), useShapedData(true), color(color),
+      fontSize(fontSize), style(style), monospace(monospace) {
+}
+
+// Legacy constructor with raw text (for backwards compatibility)
 DrawTextOp::DrawTextOp(const Point& position, const std::string& text, const Color& color,
                        float fontSize, TextStyle style, bool monospace)
-    : PaintOp(PaintOpType::DrawText), position(position), text(text), color(color),
+    : PaintOp(PaintOpType::DrawText), position(position), text(text),
+      useShapedData(false), color(color),
       fontSize(fontSize), style(style), monospace(monospace) {
 }
 

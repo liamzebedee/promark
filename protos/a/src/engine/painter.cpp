@@ -142,8 +142,10 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
 
             // Calculate x position for this segment
             float segmentX = lineX;
+            float segmentStartOffset = 0.0f;
             if (charPos > line.startChar) {
-                segmentX += textObject->getCharXOffsetInLine(charPos);
+                segmentStartOffset = textObject->getCharXOffsetInLine(charPos);
+                segmentX += segmentStartOffset;
             }
 
             // Draw text segment with appropriate color and style
@@ -155,8 +157,26 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
                 segmentColor = Color(200, 50, 50, 255);  // Reddish for inline code
             }
 
+            // P1-6: Create ShapedTextRun with pre-decoded codepoints and positions
+            ShapedTextRun shaped;
+            shaped.originalText = segmentText;
+            shaped.lineHeight = fontSize;
+
+            // Decode codepoints and compute relative positions
+            std::vector<uint32_t> decodedCodepoints = utf8::decode(segmentText);
+            shaped.codepoints = std::move(decodedCodepoints);
+
+            // Calculate x positions relative to segment start
+            float prevX = 0.0f;
+            for (int i = charPos; i < segmentEnd; i++) {
+                float charX = textObject->getCharXOffsetInLine(i + 1) - segmentStartOffset;
+                shaped.xPositions.push_back(prevX);
+                prevX = charX;
+            }
+            shaped.totalWidth = prevX;
+
             Point textPos(segmentX, lineY);
-            auto textOp = std::make_unique<DrawTextOp>(textPos, segmentText, segmentColor, fontSize, currentStyle, useMonospace);
+            auto textOp = std::make_unique<DrawTextOp>(textPos, shaped, segmentColor, fontSize, currentStyle, useMonospace);
             displayList.push_back(std::move(textOp));
 
             // Draw underline for links

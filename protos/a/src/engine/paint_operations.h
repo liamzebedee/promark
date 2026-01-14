@@ -58,8 +58,26 @@ private:
     RectRole role;
 };
 
+// P1-6: Pre-shaped text data from layout phase
+// Contains decoded codepoints and their positions, avoiding re-decoding in rasterizer
+struct ShapedTextRun {
+    std::vector<uint32_t> codepoints;      // Pre-decoded UTF-8 codepoints
+    std::vector<float> xPositions;          // X position for each codepoint (relative to segment start)
+    std::string originalText;               // Original UTF-8 text (for fallback)
+    float totalWidth;
+    float lineHeight;
+
+    ShapedTextRun() : totalWidth(0), lineHeight(0) {}
+};
+
 class DrawTextOp : public PaintOp {
 public:
+    // P1-6: Constructor with pre-shaped glyph data (preferred)
+    DrawTextOp(const Point& position, const ShapedTextRun& shapedText, const Color& color,
+               float fontSize = 16.0f, TextStyle style = TextStyle::Normal,
+               bool monospace = false);
+
+    // Legacy constructor with raw text (for backwards compatibility)
     DrawTextOp(const Point& position, const std::string& text, const Color& color,
                float fontSize = 16.0f, TextStyle style = TextStyle::Normal,
                bool monospace = false);
@@ -71,9 +89,15 @@ public:
     TextStyle getStyle() const;
     bool isMonospace() const;
 
+    // P1-6: Check if using pre-shaped data
+    bool hasShapedData() const { return useShapedData; }
+    const ShapedTextRun& getShapedText() const { return shapedText; }
+
 private:
     Point position;
-    std::string text;
+    std::string text;          // Legacy text (used if !useShapedData)
+    ShapedTextRun shapedText;  // P1-6: Pre-shaped data
+    bool useShapedData;        // P1-6: True if using shaped data
     Color color;
     float fontSize;
     TextStyle style;
