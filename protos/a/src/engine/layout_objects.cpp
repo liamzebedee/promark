@@ -144,7 +144,7 @@ TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
 Size TextLayoutObject::computeIntrinsicSize() const {
     std::string text = sourceObject->getText();
     float fontSize = getFontSize();
-    float lineHeight = fontSize;
+    float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
 
     if (text.empty()) {
         return Size(0, lineHeight);
@@ -301,7 +301,7 @@ void TextLayoutObject::wrapText(float maxWidth) {
     }
 
     float fontSize = getFontSize();
-    float lineHeight = fontSize;
+    float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
     int lineStart = 0;
     float lineStartX = 0;
     int lastWordEnd = 0;

@@ -48,23 +48,30 @@ Medium - affects reading comfort and long-form editing experience
 
 ## Resolution Status
 
-**Investigated and documented** - The typography is functional with the following findings:
+**FIXED** - Line height improved for better readability.
+
+### Fix Applied (2026-01-14)
+Changed LINE_HEIGHT_RATIO from 1.0 to 1.4 and updated all line height calculations.
+
+**Files Modified:**
+- `src/engine/typography.h` - Changed LINE_HEIGHT_RATIO from 1.0f to 1.4f
+- `src/engine/painter.cpp` - Updated lineHeight calculations to use ratio
+- `src/engine/markdown_renderer.cpp` - Updated lineHeight calculations to use ratio
+- `src/engine/layout_objects.cpp` - Updated lineHeight calculations to use ratio
+- `src/engine/font_provider.h` - Updated comments
+- `src/engine/freetype_font_provider.cpp` - Updated comments
+- `tests/test_bug_caret_after_typing.cpp` - Adjusted Y coordinate for test that depends on line height
 
 ### Current Settings (typography.h)
 - BASE_FONT_SIZE = 16px
-- LINE_HEIGHT_RATIO = 1.0 (tight - could be 1.4-1.5 for better readability)
+- LINE_HEIGHT_RATIO = 1.4 (comfortable reading)
 - PARAGRAPH_MARGIN = 8px (good separation between blocks)
 - Heading scale uses minor third ratio (1.2x) - clear hierarchy
 
 ### Font Rendering
 - Noto Sans renders crisply
-- Subpixel anti-aliasing handled by FreeType
+- Grayscale anti-aliasing handled by FreeType
 - No hinting issues observed
 
-### Potential Improvements (not critical)
-1. Increase LINE_HEIGHT_RATIO to 1.4-1.5 for more comfortable reading
-2. This would require updating layout_objects.cpp where `lineHeight = fontSize`
-
-### Decision
-Marked as design preference, not a functional bug. Current rendering is usable.
-To improve: Change `LINE_HEIGHT_RATIO` in typography.h and update layout code.
+### Result
+Text is now more comfortable to read with proper line spacing (~22.4px for body text).

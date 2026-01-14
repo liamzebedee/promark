@@ -34,6 +34,6 @@ float FreeTypeFontProvider::getGlyphAdvance(uint32_t codepoint, float fontSize, 
 
 float FreeTypeFontProvider::getLineHeight(float fontSize, bool monospace) const {
     (void)monospace;
-    // Line height equals font size (Typography::LINE_HEIGHT_RATIO = 1.0)
+    // Note: Actual line height is computed in layout code using Typography::LINE_HEIGHT_RATIO
     return fontSize;
 }

@@ -117,3 +117,25 @@ Changed rasterizer to draw items in correct z-order:
 - `tests/test_helpers.h/cpp` - Added `simulateMousePress()`, `simulateMouseMove()`, `simulateMouseRelease()`
 - `tests/test_scrollbar.cpp` - Added visual test for scrollbar interaction
 - `Makefile` - Added test file to build
+
+### Typography Line Height (2026-01-14)
+
+**Issue:** Text appeared cramped and harder to read compared to browser-rendered text. Line height was too tight (1.0x font size).
+
+**Root Cause:** `Typography::LINE_HEIGHT_RATIO` was set to 1.0f, meaning line height equaled font size. Standard readability guidelines recommend 1.4-1.5x line height for body text.
+
+**Solution:**
+- Changed `LINE_HEIGHT_RATIO` from 1.0 to 1.4
+- Updated all line height calculations across the codebase to use `fontSize * Typography::LINE_HEIGHT_RATIO`
+- Fixed test that depended on old line height calculations
+
+**Files Modified:**
+- `src/engine/typography.h` - Changed LINE_HEIGHT_RATIO from 1.0f to 1.4f
+- `src/engine/painter.cpp` - Updated 3 lineHeight calculations to use ratio
+- `src/engine/markdown_renderer.cpp` - Updated 4 lineHeight calculations to use ratio
+- `src/engine/layout_objects.cpp` - Updated 2 lineHeight calculations to use ratio
+- `src/engine/font_provider.h` - Updated comment
+- `src/engine/freetype_font_provider.cpp` - Updated comment
+- `tests/test_bug_caret_after_typing.cpp` - Adjusted Y coordinate for line height change
+
+**Result:** Body text now has ~22.4px line height (16px * 1.4), making it more comfortable to read.

@@ -60,7 +60,7 @@ constexpr float CODE_BLOCK_PADDING = 6.0f;
 // List indentation
 constexpr float LIST_INDENT = 20.0f;
 
-// Line height multiplier
-constexpr float LINE_HEIGHT_RATIO = 1.0f;  // 1.0 = same as font size
+// Line height multiplier - 1.4-1.5 is recommended for comfortable body text reading
+constexpr float LINE_HEIGHT_RATIO = 1.4f;
 
 }  // namespace Typography

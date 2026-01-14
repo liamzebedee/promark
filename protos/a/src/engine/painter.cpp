@@ -162,7 +162,7 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
             // P1-6: Create ShapedTextRun with pre-decoded codepoints and positions
             ShapedTextRun shaped;
             shaped.originalText = segmentText;
-            shaped.lineHeight = fontSize;
+            shaped.lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
 
             // Decode codepoints and compute relative positions
             std::vector<uint32_t> decodedCodepoints = utf8::decode(segmentText);
@@ -496,7 +496,7 @@ void Painter::paintSelection(DisplayList& displayList, const CaretState& caret,
                 if (!lines.empty()) {
                     const Rect& rect = layout->getRect();
                     float fontSize = textLayout->getFontSize();
-                    float lineHeight = fontSize;
+                    float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
 
                     int startLine = textLayout->getLineForChar(localStart);
                     int endLine = textLayout->getLineForChar(localEnd > 0 ? localEnd - 1 : 0);
@@ -656,7 +656,7 @@ Rect Painter::computeSelectionRect(const LayoutObject* layout, int localStart, i
     if (const auto* textLayout = dynamic_cast<const TextLayoutObject*>(layout)) {
         const auto& lines = textLayout->getLines();
         float fontSize = textLayout->getFontSize();
-        float lineHeight = fontSize;
+        float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
 
         if (lines.empty()) {
             // Fallback for unwrapped text

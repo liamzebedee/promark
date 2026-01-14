@@ -360,26 +360,12 @@ TestResult test_caret_navigate_empty_line(TestContext& ctx) {
     engine->render(ctx.getWidth(), ctx.getHeight());
     screenshots.push_back(ctx.captureScreenshot("caret_nav_empty", 0));
 
-    // Try multiple Y positions to find the empty line
-    // Based on layout: DOCUMENT_MARGIN(50) + TOOLBAR_HEIGHT(40) = 90, line height 16, spacing 8
-    // First paragraph: y=90 (content at 90-106)
-    // Empty paragraph: y=90+16+8=114 (content at 114-130)
-    // Third paragraph: y=114+16+8=138 (content at 138-154)
-    // Click in middle of empty line area - try y=122 (should be in empty line area)
-
-    // Actually, with toolbar height 40 subtracted in engine, click at screen y should be:
-    // First: screen y ~ 66-82 (after 40px toolbar + 10px padding + 16 = 66-82)
-    // Need to account for toolbar in click coordinates
-
-    // Let's try different Y values to find the empty line
-    // Screen coords: toolbar is 40px, document margin is ~32px (from test output)
-    // First line starts around y=70 visually, so:
-    // First: ~70-86
-    // Empty: ~94-110 (70 + 16 + 8 = 94)
-    // Third: ~118-134 (94 + 16 + 8 = 118)
-
-    // Try y=100 which should be in the empty line region
-    ctx.simulateClick(50, 100);
+    // With LINE_HEIGHT_RATIO=1.4, line height is ~22.4px instead of 16px
+    // The empty line's content hit region is at lineY=73.6-96 (in content coords)
+    // With toolbar at 40px, screen Y = content Y + 40
+    // So empty line is at screen Y = 113.6 to 136
+    // Click at y=125 to reliably hit the empty line
+    ctx.simulateClick(50, 125);
     for (int i = 0; i < 5; i++) engine->render(ctx.getWidth(), ctx.getHeight());
     screenshots.push_back(ctx.captureScreenshot("caret_nav_empty", 1));
 

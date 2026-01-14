@@ -24,7 +24,7 @@ public:
     virtual float getGlyphAdvance(uint32_t codepoint, float fontSize, bool monospace) const = 0;
 
     // Get line height for given font size
-    // For now, line height equals font size (Typography::LINE_HEIGHT_RATIO = 1.0)
+    // Line height = fontSize * Typography::LINE_HEIGHT_RATIO (1.4 for readable text)
     virtual float getLineHeight(float fontSize, bool monospace) const = 0;
 
     // Get fallback character width estimate (for when glyph is missing)

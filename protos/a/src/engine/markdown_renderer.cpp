@@ -273,7 +273,7 @@ int MarkdownRenderer::hitTest(float x, float y) const {
             // Text baseline is at yOffset + fontSize, with glyphs extending above
             // Visual text top is approximately yOffset + 0.2*fontSize
             float lineY = rect.position.y + line.yOffset + fontSize * 0.2f;
-            float lineHeight = fontSize;
+            float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
             std::cerr << "  Layout domPos=" << layoutDOMPos << " rect.y=" << rect.position.y
                       << " lineY=" << lineY << "-" << (lineY + lineHeight)
                       << " lineX=" << rect.position.x << "-" << (rect.position.x + line.width)
@@ -319,7 +319,7 @@ int MarkdownRenderer::hitTest(float x, float y) const {
                 const auto& line = lines[lineIdx];
                 // Shift hit region down to match visual text position
                 float lineY = rect.position.y + line.yOffset + fontSize * 0.2f;
-                float lineHeight = fontSize;
+                float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
 
                 if (y >= lineY && y < lineY + lineHeight) {
                     float lineStartX = rect.position.x;
@@ -368,7 +368,7 @@ int MarkdownRenderer::hitTest(float x, float y) const {
                 const auto& line = lines[lineIdx];
                 // Shift hit region down to match visual text position
                 float lineY = rect.position.y + line.yOffset + fontSize * 0.2f;
-                float lineHeight = fontSize;
+                float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
                 float centerY = lineY + lineHeight / 2;
                 float dist = std::abs(y - centerY);
                 if (dist < minDist) {
@@ -564,7 +564,7 @@ std::string MarkdownRenderer::getLinkAtPosition(float x, float y) const {
         // Check each line
         for (const auto& line : lines) {
             float lineY = rect.position.y + line.yOffset;
-            float lineHeight = fontSize;
+            float lineHeight = fontSize * Typography::LINE_HEIGHT_RATIO;
 
             if (y >= lineY && y < lineY + lineHeight) {
                 // Click is on this line - find character position
