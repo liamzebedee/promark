@@ -8,9 +8,9 @@ enum class MarkdownObjectType {
     Heading,
     Paragraph,
     Image,
-    Bold,
-    Italic,
-    Underline,
+    Strong,       // Inline bold text (**text**) - structural node containing Text children
+    Emphasis,     // Inline italic text (*text*) - structural node containing Text children
+    InlineCode,   // Inline code span (`code`) - structural node containing Text children
     Link,
     BlockQuote,
     CodeBlock,
@@ -21,7 +21,9 @@ enum class MarkdownObjectType {
     Table,
     TableRow,
     TableCell,
-    Text
+    Text,
+    LineBreak,    // Hard line break within paragraph (<br>)
+    Strikethrough // Strikethrough text (~~text~~)
 };
 
 // Table cell alignment
@@ -220,4 +222,32 @@ public:
 
 private:
     TableCellAlign alignment;
+};
+
+// Inline formatting nodes - structural model per specs/01-document-model.md
+// "Formatting is Structural - bold text is a Strong node containing Text children"
+
+class StrongObject : public MarkdownObject {
+public:
+    StrongObject();
+};
+
+class EmphasisObject : public MarkdownObject {
+public:
+    EmphasisObject();
+};
+
+class InlineCodeObject : public MarkdownObject {
+public:
+    InlineCodeObject();
+};
+
+class LineBreakObject : public MarkdownObject {
+public:
+    LineBreakObject();
+};
+
+class StrikethroughObject : public MarkdownObject {
+public:
+    StrikethroughObject();
 };

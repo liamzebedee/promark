@@ -15,7 +15,13 @@ private:
     std::unique_ptr<MarkdownObject> parseDocument(const std::string& text);
     std::unique_ptr<MarkdownObject> parseBlock(const std::string& text, size_t& position);
     std::unique_ptr<MarkdownObject> parseInline(const std::string& text, size_t& position);
+
+    // Legacy annotation-based parsing (to be removed after tree model is complete)
     std::string parseInlineElements(const std::string& line, int lineRawStart, MarkdownObject* parent);
+
+    // Tree-based inline parsing - creates structural inline children (Strong, Emphasis, etc.)
+    // Per specs/01-document-model.md: "Formatting is Structural"
+    void createInlineChildren(const std::string& text, MarkdownObject* parent, int rawStart = 0);
 
     // Table parsing
     void parseTableRow(const std::string& line, const std::vector<TableCellAlign>& alignments, MarkdownObject* row);

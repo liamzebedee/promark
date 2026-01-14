@@ -145,3 +145,25 @@ TableCellAlign TableCellObject::getAlignment() const {
 void TableCellObject::setAlignment(TableCellAlign align) {
     alignment = align;
 }
+
+// Inline formatting node implementations
+
+StrongObject::StrongObject()
+    : MarkdownObject(MarkdownObjectType::Strong) {
+}
+
+EmphasisObject::EmphasisObject()
+    : MarkdownObject(MarkdownObjectType::Emphasis) {
+}
+
+InlineCodeObject::InlineCodeObject()
+    : MarkdownObject(MarkdownObjectType::InlineCode) {
+}
+
+LineBreakObject::LineBreakObject()
+    : MarkdownObject(MarkdownObjectType::LineBreak) {
+}
+
+StrikethroughObject::StrikethroughObject()
+    : MarkdownObject(MarkdownObjectType::Strikethrough) {
+}

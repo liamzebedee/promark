@@ -107,10 +107,11 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
         case MarkdownObjectType::TableCell:
             return std::make_unique<TableCellLayoutObject>(object);
 
-        case MarkdownObjectType::Bold:
-        case MarkdownObjectType::Italic:
-        case MarkdownObjectType::Underline:
+        case MarkdownObjectType::Strong:
+        case MarkdownObjectType::Emphasis:
+        case MarkdownObjectType::InlineCode:
         case MarkdownObjectType::Link:
+        case MarkdownObjectType::Strikethrough:
             return std::make_unique<InlineLayoutObject>(object);
 
         default:

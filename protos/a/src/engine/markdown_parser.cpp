@@ -2,6 +2,106 @@
 #include <sstream>
 #include <iostream>
 
+// Helper: collect display text from inline children (for layout compatibility)
+// This allows the tree model to coexist with the current annotation-based layout/painting.
+static std::string collectDisplayText(const MarkdownObject* obj) {
+    std::string result;
+    MarkdownObjectType type = obj->getType();
+
+    switch (type) {
+        case MarkdownObjectType::Text:
+            return obj->getText();
+
+        case MarkdownObjectType::LineBreak:
+            return "\n";
+
+        case MarkdownObjectType::Strong:
+        case MarkdownObjectType::Emphasis:
+        case MarkdownObjectType::InlineCode:
+        case MarkdownObjectType::Link:
+        case MarkdownObjectType::Strikethrough:
+        case MarkdownObjectType::Paragraph:
+        case MarkdownObjectType::Heading:
+            // Recursively collect from children
+            for (const auto& child : obj->getChildren()) {
+                result += collectDisplayText(child.get());
+            }
+            return result;
+
+        default:
+            return "";
+    }
+}
+
+// Helper: derive style ranges from tree structure (for layout/painting compatibility)
+// Walks the inline tree and creates annotations based on node types.
+static void buildStyleRangesFromTree(const MarkdownObject* obj, int& charPos,
+                                     MarkdownObject* parent, bool inStrong, bool inEmphasis, bool inCode) {
+    MarkdownObjectType type = obj->getType();
+
+    switch (type) {
+        case MarkdownObjectType::Text: {
+            int len = static_cast<int>(obj->getText().length());
+            if (len > 0 && (inStrong || inEmphasis || inCode)) {
+                TextStyle style = TextStyle::Normal;
+                if (inStrong && inEmphasis) {
+                    style = TextStyle::BoldItalic;
+                } else if (inStrong) {
+                    style = TextStyle::Bold;
+                } else if (inEmphasis) {
+                    style = TextStyle::Italic;
+                } else if (inCode) {
+                    style = TextStyle::Code;
+                }
+                parent->addStyleRange(charPos, charPos + len, style);
+            }
+            charPos += len;
+            break;
+        }
+
+        case MarkdownObjectType::LineBreak:
+            charPos += 1;  // Newline character
+            break;
+
+        case MarkdownObjectType::Strong:
+            for (const auto& child : obj->getChildren()) {
+                buildStyleRangesFromTree(child.get(), charPos, parent, true, inEmphasis, inCode);
+            }
+            break;
+
+        case MarkdownObjectType::Emphasis:
+            for (const auto& child : obj->getChildren()) {
+                buildStyleRangesFromTree(child.get(), charPos, parent, inStrong, true, inCode);
+            }
+            break;
+
+        case MarkdownObjectType::InlineCode:
+            for (const auto& child : obj->getChildren()) {
+                buildStyleRangesFromTree(child.get(), charPos, parent, inStrong, inEmphasis, true);
+            }
+            break;
+
+        case MarkdownObjectType::Link: {
+            // Track link range
+            int linkStart = charPos;
+            for (const auto& child : obj->getChildren()) {
+                buildStyleRangesFromTree(child.get(), charPos, parent, inStrong, inEmphasis, inCode);
+            }
+            int linkEnd = charPos;
+            const LinkObject* linkObj = static_cast<const LinkObject*>(obj);
+            parent->addLinkRange(linkStart, linkEnd, linkObj->getUrl());
+            break;
+        }
+
+        default:
+            // For other types, recurse into children
+            for (const auto& child : obj->getChildren()) {
+                buildStyleRangesFromTree(child.get(), charPos, parent, inStrong, inEmphasis, inCode);
+            }
+            break;
+    }
+}
+
 MarkdownParser::MarkdownParser() {
 }
 
@@ -154,6 +254,202 @@ std::string MarkdownParser::parseInlineElements(const std::string& line, int lin
     }
 
     return displayText;
+}
+
+// Tree-based inline parsing - creates structural inline children
+// Per specs/01-document-model.md: "Formatting is Structural"
+// "Hello **world**" becomes: Text("Hello "), Strong { Text("world") }
+void MarkdownParser::createInlineChildren(const std::string& text, MarkdownObject* parent, int rawStart) {
+    size_t pos = 0;
+    size_t plainStart = 0;  // Start of current plain text run
+
+    auto addPlainText = [&](size_t end) {
+        if (end > plainStart) {
+            std::string plainText = text.substr(plainStart, end - plainStart);
+            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+            textNode->setText(plainText);
+            textNode->setRawRange(rawStart + static_cast<int>(plainStart),
+                                  rawStart + static_cast<int>(end));
+            parent->addChild(std::move(textNode));
+        }
+    };
+
+    while (pos < text.length()) {
+        // Check for bold+italic (*** or ___) - creates nested Strong > Emphasis
+        if (pos + 2 < text.length() &&
+            ((text[pos] == '*' && text[pos+1] == '*' && text[pos+2] == '*') ||
+             (text[pos] == '_' && text[pos+1] == '_' && text[pos+2] == '_'))) {
+            char delim = text[pos];
+            std::string delimStr(3, delim);
+            size_t endPos = findClosingDelimiter(text, pos + 3, delimStr);
+            if (endPos != std::string::npos) {
+                // Add any preceding plain text
+                addPlainText(pos);
+
+                std::string content = text.substr(pos + 3, endPos - pos - 3);
+
+                // Create nested Strong > Emphasis > Text
+                auto strong = std::make_unique<StrongObject>();
+                strong->setRawRange(rawStart + static_cast<int>(pos),
+                                    rawStart + static_cast<int>(endPos + 3));
+
+                auto emphasis = std::make_unique<EmphasisObject>();
+                emphasis->setRawRange(rawStart + static_cast<int>(pos + 2),
+                                      rawStart + static_cast<int>(endPos + 1));
+
+                // Recursively parse content for nested inline formatting
+                createInlineChildren(content, emphasis.get(), rawStart + static_cast<int>(pos + 3));
+
+                strong->addChild(std::move(emphasis));
+                parent->addChild(std::move(strong));
+
+                pos = endPos + 3;
+                plainStart = pos;
+                continue;
+            }
+        }
+
+        // Check for bold (** or __)
+        if (pos + 1 < text.length() &&
+            ((text[pos] == '*' && text[pos+1] == '*') ||
+             (text[pos] == '_' && text[pos+1] == '_'))) {
+            char delim = text[pos];
+            std::string delimStr(2, delim);
+            size_t endPos = findClosingDelimiter(text, pos + 2, delimStr);
+            if (endPos != std::string::npos) {
+                // Add any preceding plain text
+                addPlainText(pos);
+
+                std::string content = text.substr(pos + 2, endPos - pos - 2);
+
+                auto strong = std::make_unique<StrongObject>();
+                strong->setRawRange(rawStart + static_cast<int>(pos),
+                                    rawStart + static_cast<int>(endPos + 2));
+
+                // Recursively parse content for nested inline formatting
+                createInlineChildren(content, strong.get(), rawStart + static_cast<int>(pos + 2));
+
+                parent->addChild(std::move(strong));
+
+                pos = endPos + 2;
+                plainStart = pos;
+                continue;
+            }
+        }
+
+        // Check for italic (* or _)
+        if (text[pos] == '*' || text[pos] == '_') {
+            char delim = text[pos];
+            std::string delimStr(1, delim);
+            size_t endPos = findClosingDelimiter(text, pos + 1, delimStr);
+            if (endPos != std::string::npos && endPos > pos + 1) {
+                // Add any preceding plain text
+                addPlainText(pos);
+
+                std::string content = text.substr(pos + 1, endPos - pos - 1);
+
+                auto emphasis = std::make_unique<EmphasisObject>();
+                emphasis->setRawRange(rawStart + static_cast<int>(pos),
+                                      rawStart + static_cast<int>(endPos + 1));
+
+                // Recursively parse content for nested inline formatting
+                createInlineChildren(content, emphasis.get(), rawStart + static_cast<int>(pos + 1));
+
+                parent->addChild(std::move(emphasis));
+
+                pos = endPos + 1;
+                plainStart = pos;
+                continue;
+            }
+        }
+
+        // Check for link syntax [text](url)
+        if (text[pos] == '[') {
+            size_t textEnd = text.find(']', pos + 1);
+            if (textEnd != std::string::npos && textEnd + 1 < text.length() && text[textEnd + 1] == '(') {
+                size_t urlEnd = text.find(')', textEnd + 2);
+                if (urlEnd != std::string::npos) {
+                    // Add any preceding plain text
+                    addPlainText(pos);
+
+                    std::string linkText = text.substr(pos + 1, textEnd - pos - 1);
+                    std::string url = text.substr(textEnd + 2, urlEnd - textEnd - 2);
+
+                    auto link = std::make_unique<LinkObject>(url);
+                    link->setRawRange(rawStart + static_cast<int>(pos),
+                                      rawStart + static_cast<int>(urlEnd + 1));
+
+                    // Create Text child for link text (links can contain inline formatting)
+                    createInlineChildren(linkText, link.get(), rawStart + static_cast<int>(pos + 1));
+
+                    parent->addChild(std::move(link));
+
+                    pos = urlEnd + 1;
+                    plainStart = pos;
+                    continue;
+                }
+            }
+        }
+
+        // Check for <br> tag (HTML line break)
+        if (text[pos] == '<' && pos + 3 < text.length()) {
+            std::string remaining = text.substr(pos);
+            size_t brLen = 0;
+            if (remaining.substr(0, 6) == "<br />") {
+                brLen = 6;
+            } else if (remaining.substr(0, 5) == "<br/>") {
+                brLen = 5;
+            } else if (remaining.substr(0, 4) == "<br>") {
+                brLen = 4;
+            }
+            if (brLen > 0) {
+                // Add any preceding plain text
+                addPlainText(pos);
+
+                auto lineBreak = std::make_unique<LineBreakObject>();
+                lineBreak->setRawRange(rawStart + static_cast<int>(pos),
+                                       rawStart + static_cast<int>(pos + brLen));
+                parent->addChild(std::move(lineBreak));
+
+                pos += brLen;
+                plainStart = pos;
+                continue;
+            }
+        }
+
+        // Check for inline code with backticks
+        if (text[pos] == '`') {
+            size_t endPos = text.find('`', pos + 1);
+            if (endPos != std::string::npos) {
+                // Add any preceding plain text
+                addPlainText(pos);
+
+                std::string code = text.substr(pos + 1, endPos - pos - 1);
+
+                auto inlineCode = std::make_unique<InlineCodeObject>();
+                inlineCode->setRawRange(rawStart + static_cast<int>(pos),
+                                        rawStart + static_cast<int>(endPos + 1));
+
+                // Code blocks don't have nested formatting - just plain text
+                auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
+                textNode->setText(code);
+                textNode->setRawRange(rawStart + static_cast<int>(pos + 1),
+                                      rawStart + static_cast<int>(endPos));
+                inlineCode->addChild(std::move(textNode));
+
+                parent->addChild(std::move(inlineCode));
+
+                pos = endPos + 1;
+                plainStart = pos;
+                continue;
+            }
+        }
+
+        pos++;
+    }
+
+    // Add any remaining plain text
+    addPlainText(text.length());
 }
 
 std::unique_ptr<MarkdownObject> MarkdownParser::parseDocument(const std::string& text) {
@@ -346,20 +642,20 @@ continue_parsing:
             // Get heading text - starts at lineStart + syntaxEnd in raw
             std::string headingText = line.substr(syntaxEnd);
             int textRawStart = static_cast<int>(lineStart + syntaxEnd);
-            int textRawEnd = static_cast<int>(lineEnd);
 
             auto heading = std::make_unique<HeadingObject>(level);
             heading->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+            heading->setTextOffset(static_cast<int>(syntaxEnd));
 
-            // Parse inline elements (bold, italic, links) in heading text
-            std::string displayText = parseInlineElements(headingText, textRawStart, heading.get());
+            // Create inline children using tree-based model
+            createInlineChildren(headingText, heading.get(), textRawStart);
 
-            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-            textNode->setText(displayText);
-            textNode->setRawRange(textRawStart, textRawEnd);
-            textNode->setTextOffset(0);  // Text starts at textRawStart
+            // For layout/painting compatibility: derive display text and annotations from tree
+            std::string displayText = collectDisplayText(heading.get());
+            heading->setText(displayText);
+            int charPos = 0;
+            buildStyleRangesFromTree(heading.get(), charPos, heading.get(), false, false, false);
 
-            heading->addChild(std::move(textNode));
             document->addChild(std::move(heading));
         } else if (line[0] == '>') {
             // Block quote - collect consecutive > lines into a single block
@@ -414,14 +710,14 @@ continue_parsing:
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
             paragraph->setRawRange(static_cast<int>(firstTextRawStart), static_cast<int>(blockEnd));
 
-            // Parse inline elements (bold, italic, links) in blockquote text
-            std::string displayText = parseInlineElements(combinedText, static_cast<int>(firstTextRawStart), paragraph.get());
+            // Create inline children using tree-based model
+            createInlineChildren(combinedText, paragraph.get(), static_cast<int>(firstTextRawStart));
 
-            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-            textNode->setText(displayText);
-            textNode->setRawRange(static_cast<int>(firstTextRawStart), static_cast<int>(blockEnd));
-            textNode->setTextOffset(0);
-            paragraph->addChild(std::move(textNode));
+            // For layout/painting compatibility: derive display text and annotations from tree
+            std::string displayText = collectDisplayText(paragraph.get());
+            paragraph->setText(displayText);
+            int charPos = 0;
+            buildStyleRangesFromTree(paragraph.get(), charPos, paragraph.get(), false, false, false);
 
             blockquote->addChild(std::move(paragraph));
             document->addChild(std::move(blockquote));
@@ -450,15 +746,15 @@ continue_parsing:
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
             paragraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
 
-            // Parse inline elements (bold, italic, links)
-            std::string displayText = parseInlineElements(line, static_cast<int>(lineStart), paragraph.get());
+            // Create inline children using tree-based model
+            createInlineChildren(line, paragraph.get(), static_cast<int>(lineStart));
 
-            auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
-            textNode->setText(displayText);
-            textNode->setRawRange(static_cast<int>(lineStart), static_cast<int>(lineEnd));
-            textNode->setTextOffset(0);
+            // For layout/painting compatibility: derive display text and annotations from tree
+            std::string displayText = collectDisplayText(paragraph.get());
+            paragraph->setText(displayText);
+            int charPos = 0;
+            buildStyleRangesFromTree(paragraph.get(), charPos, paragraph.get(), false, false, false);
 
-            paragraph->addChild(std::move(textNode));
             document->addChild(std::move(paragraph));
         } else if (isListItem(line)) {
             // Parse list - collect all consecutive list items

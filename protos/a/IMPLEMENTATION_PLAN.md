@@ -81,18 +81,19 @@ These must be resolved first as they block correct implementation of other featu
 - **Spec Reference**: `specs/02-layout-system.md` - "Engine Coordinates, Objects Measure"
 - **Files**: `src/engine/layout_objects.cpp`, `src/engine/layout_engine.cpp`
 
-### P0-5: Convert Inline Formatting from ANNOTATION to TREE Model
-- **Status**: NOT STARTED
+### P0-5: Inline Formatting Tree Model
+- **Status**: MOSTLY COMPLETE
 - **Complexity**: XL
 - **Dependencies**: None
-- **Problem**:
-  - Bold/Italic/Underline enum values exist (`markdown_objects.h:11-13`) but NEVER instantiated
-  - `InlineStyleRange` annotation model used instead (`markdown_parser.cpp:59-63`)
-  - `InlineLinkRange` for links instead of Link nodes
-- **Current**: `Paragraph { text: "Hello world", styleRanges: [{start:6, end:11, style:Bold}] }`
-- **Required**: `Paragraph { children: [Text("Hello "), Strong { Text("world") }] }`
+- **Current State**:
+  - Tree structure is fully implemented via `createInlineChildren()` method (`markdown_parser.cpp:262-453`)
+  - Structural tree nodes are created and used: `StrongObject`, `EmphasisObject`, `InlineCodeObject`, `LineBreakObject`, `StrikethroughObject`
+  - Nested formatting works correctly (e.g., `***bold italic***` creates Strong > Emphasis > Text)
+  - Annotations (`InlineStyleRange`) are DERIVED from the tree via `buildStyleRangesFromTree()` for layout/paint compatibility
+- **Architecture**: The parser creates hierarchical inline nodes per spec. Style ranges are derived from the tree for the current layout/paint implementation.
+- **Remaining Work**: Optionally migrate layout/paint to consume the tree directly (may not be necessary given the current approach works correctly)
 - **Spec Reference**: `specs/01-document-model.md` - "Formatting is Structural"
-- **Files**: `src/engine/markdown_parser.cpp`, `src/engine/markdown_objects.h`
+- **Files**: `src/engine/markdown_parser.cpp`, `src/engine/markdown_objects.h`, `src/engine/markdown_objects.cpp`
 
 ---
 
@@ -214,13 +215,16 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/rasterizer.cpp`, `src/engine/batch_renderer.h`, `src/engine/batch_renderer.cpp`
 
 ### P1-8: Implement Viewport Culling in Rasterization
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: P0-3, P1-2
-- **Problem**: Rasterizer processes flat list without visibility checking
-- **Required**: Skip entire subtrees whose bounds don't intersect viewport
+- **Solution**: Viewport culling was implemented as part of P1-2 (hierarchical PaintTree):
+  - `rasterize()` method accepts `PaintTree` and `viewport`, calling `rasterizeArtifact()` for traversal
+  - `rasterizeArtifact()` recursively processes artifacts with `boundsIntersectViewport()` check
+  - `boundsIntersectViewport()` implements proper AABB intersection test to skip subtrees outside viewport
+  - Entire subtrees are culled when bounds don't intersect viewport, improving performance
 - **Spec Reference**: `specs/04-rasterization.md` - tree traversal with culling
-- **Files**: `src/engine/rasterizer.cpp`
+- **Files**: `src/engine/rasterizer.cpp` (rasterizeArtifact(), boundsIntersectViewport())
 
 ---
 
@@ -239,19 +243,19 @@ These must be resolved first as they block correct implementation of other featu
   - `isList()` returns false
 - **Files**: `src/engine/markdown_parser.cpp`
 
-### P2-2: Add Missing Node Types (LineBreak, ThematicBreak)
+### P2-2: Add Missing Node Types (ThematicBreak)
 - **Status**: NOT STARTED
 - **Complexity**: M
 - **Dependencies**: P0-5
-- **Problem**: LineBreak and ThematicBreak nodes not implemented
+- **Problem**: ThematicBreak node not implemented (LineBreak is already implemented via `LineBreakObject`)
 - **Spec Reference**: `specs/01-document-model.md`
 - **Files**: `src/engine/markdown_objects.h`, `src/engine/markdown_parser.cpp`
 
-### P2-3: Implement Nested Inline Formatting
-- **Status**: NOT STARTED
+### P2-3: Nested Inline Formatting
+- **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: P0-5
-- **Problem**: Cannot handle `***bold italic***` correctly
+- **Solution**: Nested formatting works correctly via `createInlineChildren()`. Example: `***bold italic***` creates Strong > Emphasis > Text hierarchy.
 - **Files**: `src/engine/markdown_parser.cpp`
 
 ### P2-4: Implement layoutInlineFlow()
@@ -334,25 +338,19 @@ These must be resolved first as they block correct implementation of other featu
 - **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: P0-4
-- **Solution**: The skipPropagate flag was already deleted as part of P0-4 (commit 48e9700). The engine is now the sole coordinator for layout positioning with no special-case delegation needed.
-- **Location**: Was at `layout_engine.cpp:198-199`, now removed
+- **Solution**: Deleted as part of P0-4. Engine is now sole coordinator for layout positioning with no special-case delegation.
 
 ### P3-4: Delete SetClipOp/RestoreClipOp
 - **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: None
-- **Solution**: Removed all dead code related to SetClip/RestoreClip operations:
-  - Deleted `SetClip` and `RestoreClip` enum values from `PaintOpType`
-  - Deleted `SetClipOp` and `RestoreClipOp` class definitions and implementations
-  - Deleted `executeSetClip()` and `executeRestoreClip()` methods from Rasterizer
-  - Deleted unused `currentClip` and `hasClip` member variables from Rasterizer
-- **Location**: Was at `paint_operations.h:83-96`, now removed
+- **Solution**: Removed dead SetClip/RestoreClip operations, enum values, class definitions, and associated Rasterizer methods (currentClip, hasClip members).
 
 ### P3-5: Consolidate DrawDebugBorderOp, DrawSelectionRectOp, DrawCaretOp
 - **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: P1-1
-- **Solution**: Merged into unified DrawRect with role field as part of P1-1 implementation. The separate classes have been deleted and all usages now use `DrawRectOp` with the appropriate `RectRole`.
+- **Solution**: Merged into unified DrawRect with role field as part of P1-1. Separate classes deleted; all usages use DrawRectOp with appropriate RectRole.
 
 ### P3-6: Remove domToRaw/rawToDOM Functions
 - **Status**: NOT STARTED
@@ -385,7 +383,7 @@ P0-1 (TextModel) ─────┬──> P0-2 (Remove inputBuffer)
                       └──> P3-6 (Remove domToRaw/rawToDOM)
 
 P0-3 (RenderBackend) ─┬──> P1-2 (PaintTree hierarchy) [BOTH COMPLETE]
-                      └──> P1-8 (Viewport culling) [Enabled by P1-2]
+                      └──> P1-8 (Viewport culling) [COMPLETE - implemented via P1-2]
 
 P0-4 (Unify layout) ──┬──> P2-4 (layoutInlineFlow)
                       └──> P3-3 (Delete skipPropagate)
@@ -417,7 +415,7 @@ These groups can be worked on concurrently:
 - ~~P0-4~~, P1-5, P2-5, P2-6 (P0-4 complete)
 
 **Group D - Parser/Document Model:**
-- P0-5, P2-1
+- P0-5 (mostly complete), P2-1, ~~P2-3~~ (complete)
 
 **Group E - Independent Cleanup:**
 - ~~P1-3~~, P3-7 (P1-3 complete)
@@ -429,8 +427,8 @@ These groups can be worked on concurrently:
 | File | Primary Issues |
 |------|----------------|
 | `engine.h/cpp` | God class, keyboard handling (GL calls moved to backend) |
-| `markdown_objects.h` | Unused Bold/Italic/Underline enums, annotation model |
-| `markdown_parser.cpp` | 6 stub methods, annotation model for inline formatting |
+| `markdown_objects.h` | Tree model implemented (Strong, Emphasis, etc.) |
+| `markdown_parser.cpp` | 6 stub methods, tree model with derived annotations for layout/paint |
 | `layout_objects.cpp` | I/O during layout (split authority resolved) |
 | `layout_engine.cpp` | stub layoutInlineFlow() |
 | `paint_operations.h` | PaintTree hierarchical (PaintArtifact with bounds, clipRect, children) |
@@ -442,4 +440,4 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P1-2 (Hierarchical PaintTree) completed - viewport culling enabled*
+*Last updated: 2026-01-14 - P0-5 corrected to MOSTLY COMPLETE (tree structure exists, annotations derived from tree), P2-3 marked COMPLETED (nested formatting works)*
