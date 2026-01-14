@@ -91,11 +91,9 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
     const Rect& rect = textObject->getRect();
     Color defaultColor = getTextColor(textObject->getSourceObject());
     Color linkColor(0, 102, 204, 255);  // Blue for links
-    float fontSize = textObject->getFontSize();
+    float fontSize = textObject->getFontSize();  // P1-5: Now cached
     std::string fullText = textObject->getSourceObject()->getText();
     const auto& lines = textObject->getLines();
-    const auto& linkRanges = textObject->getLinkRanges();
-    const auto& styleRanges = textObject->getStyleRanges();
     bool isMonospace = textObject->getMonospace();
 
     if (lines.empty()) {
@@ -106,27 +104,15 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
         return;
     }
 
-    // Pre-compute style and link info for O(1) lookup per character
-    int textLen = textObject->getCharCount();
-    if (textLen == 0) textLen = static_cast<int>(utf8::length(fullText));
+    // P1-5: Use pre-computed character styles from layout phase
+    // These are computed once during layout, not every paint call
+    const auto& computedStyles = textObject->getComputedCharStyles();
+    const auto& charStyles = computedStyles.charStyles;
+    const auto& charLinkIdx = computedStyles.charLinkIdx;
 
-    std::vector<TextStyle> charStyles(textLen, TextStyle::Normal);
-    std::vector<int> charLinkIdx(textLen, -1);  // -1 = no link, otherwise index into linkRanges
-
-    // Fill in styles (O(m) where m = number of style ranges)
-    for (const auto& sr : styleRanges) {
-        for (int i = sr.startChar; i < sr.endChar && i < textLen; i++) {
-            if (i >= 0) charStyles[i] = sr.style;
-        }
-    }
-
-    // Fill in link indices (O(k) where k = number of link ranges)
-    for (size_t li = 0; li < linkRanges.size(); li++) {
-        const auto& lr = linkRanges[li];
-        for (int i = lr.startChar; i < lr.endChar && i < textLen; i++) {
-            if (i >= 0) charLinkIdx[i] = static_cast<int>(li);
-        }
-    }
+    // Use actual vector sizes for bounds checking (vectors may be empty if layout not called)
+    int styleLen = static_cast<int>(charStyles.size());
+    int linkLen = static_cast<int>(charLinkIdx.size());
 
     // Render each wrapped line
     for (const auto& line : lines) {
@@ -135,16 +121,16 @@ void Painter::paintText(const TextLayoutObject* textObject, DisplayList& display
         int charPos = line.startChar;
 
         while (charPos < line.endChar) {
-            // Get current styling info with O(1) lookup
-            int linkIdx = (charPos < textLen) ? charLinkIdx[charPos] : -1;
-            TextStyle currentStyle = (charPos < textLen) ? charStyles[charPos] : TextStyle::Normal;
+            // Get current styling info with O(1) lookup (safe bounds check)
+            int linkIdx = (charPos >= 0 && charPos < linkLen) ? charLinkIdx[charPos] : -1;
+            TextStyle currentStyle = (charPos >= 0 && charPos < styleLen) ? charStyles[charPos] : TextStyle::Normal;
             bool inLink = (linkIdx >= 0);
 
             // Find where this segment ends (when style or link status changes)
             int segmentEnd = charPos + 1;
             while (segmentEnd < line.endChar) {
-                int nextLinkIdx = (segmentEnd < textLen) ? charLinkIdx[segmentEnd] : -1;
-                TextStyle nextStyle = (segmentEnd < textLen) ? charStyles[segmentEnd] : TextStyle::Normal;
+                int nextLinkIdx = (segmentEnd >= 0 && segmentEnd < linkLen) ? charLinkIdx[segmentEnd] : -1;
+                TextStyle nextStyle = (segmentEnd >= 0 && segmentEnd < styleLen) ? charStyles[segmentEnd] : TextStyle::Normal;
                 if (nextLinkIdx != linkIdx || nextStyle != currentStyle) {
                     break;
                 }

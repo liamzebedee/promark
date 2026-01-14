@@ -30,16 +30,16 @@ class LayoutObject {
 public:
     LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow);
     virtual ~LayoutObject();
-    
+
     const MarkdownObject* getSourceObject() const;
     LayoutFlow getFlow() const;
-    
+
     void setRect(const Rect& rect);
     const Rect& getRect() const;
-    
+
     void addChild(std::unique_ptr<LayoutObject> child);
     const std::vector<std::unique_ptr<LayoutObject>>& getChildren() const;
-    
+
     virtual Size computeIntrinsicSize() const;
     virtual void layout(const Size& availableSpace);
     virtual float getFontSize() const;
@@ -50,13 +50,20 @@ public:
 
     void setParent(LayoutObject* parent);
     LayoutObject* getParent() const;
-    
+
+    // Invalidate cached styles when hierarchy changes
+    void invalidateFontSizeCache();
+
 protected:
     const MarkdownObject* sourceObject;
     LayoutFlow flow;
     Rect rect;
     std::vector<std::unique_ptr<LayoutObject>> children;
     LayoutObject* parent;
+
+    // Cached font size (P1-5: Pre-computed styles)
+    mutable float cachedFontSize = -1.0f;  // -1 = not computed
+    mutable LayoutObject* cachedFontSizeParent = nullptr;  // For invalidation check
 };
 
 class BlockLayoutObject : public LayoutObject {
@@ -69,6 +76,19 @@ class InlineLayoutObject : public LayoutObject {
 public:
     InlineLayoutObject(const MarkdownObject* sourceObject);
     void layout(const Size& availableSpace) override;
+};
+
+// Pre-computed character-level styles (P1-5: Fully resolved style information)
+// Computed once during layout, reused by painter without recomputation
+struct ComputedCharStyles {
+    std::vector<TextStyle> charStyles;    // TextStyle for each character
+    std::vector<int> charLinkIdx;         // Link index (-1 = no link) for each character
+    std::vector<bool> isCodeStyle;        // Fast lookup for code styling
+
+    // Validation metadata
+    int cachedCharCount = -1;
+    size_t cachedStyleRangeCount = 0;
+    size_t cachedLinkRangeCount = 0;
 };
 
 class TextLayoutObject : public LayoutObject {
@@ -113,6 +133,9 @@ public:
     // Style ranges from parent paragraph
     const std::vector<InlineStyleRange>& getStyleRanges() const;
 
+    // P1-5: Pre-computed character styles for painter (computed during layout)
+    const ComputedCharStyles& getComputedCharStyles() const { return computedCharStyles; }
+
 private:
     std::vector<GlyphRun> glyphRuns;
     std::vector<float> charXOffsets;  // Cumulative x offset for each character
@@ -120,8 +143,13 @@ private:
     const FontProvider* fontProvider;
     float availableWidth;
     bool isMonospace = false;
+
+    // P1-5: Pre-computed styles (resolved once during layout)
+    ComputedCharStyles computedCharStyles;
+
     void shapeText();
     void wrapText(float maxWidth);
+    void computeCharStyles();  // P1-5: Compute character-level styles
 };
 
 class ImageLayoutObject : public LayoutObject {

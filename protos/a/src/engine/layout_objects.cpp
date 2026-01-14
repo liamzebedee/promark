@@ -4,8 +4,9 @@
 #include <jpeglib.h>
 #include "stb/stb_image.h"
 
-LayoutObject::LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow) 
-    : sourceObject(sourceObject), flow(flow), parent(nullptr) {
+LayoutObject::LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow)
+    : sourceObject(sourceObject), flow(flow), parent(nullptr),
+      cachedFontSize(-1.0f), cachedFontSizeParent(nullptr) {
 }
 
 LayoutObject::~LayoutObject() {
@@ -46,23 +47,45 @@ void LayoutObject::layout(const Size& availableSpace) {
 }
 
 float LayoutObject::getFontSize() const {
+    // P1-5: Use cached font size if valid
+    if (cachedFontSize > 0 && cachedFontSizeParent == parent) {
+        return cachedFontSize;
+    }
+
+    // Compute and cache font size
     switch (sourceObject->getType()) {
         case MarkdownObjectType::Heading: {
             const HeadingObject* heading = static_cast<const HeadingObject*>(sourceObject);
-            return Typography::headingSize(heading->getLevel());
+            cachedFontSize = Typography::headingSize(heading->getLevel());
+            break;
         }
         case MarkdownObjectType::Text:
             // Text inherits font size from parent
             if (parent) {
-                return parent->getFontSize();
+                cachedFontSize = parent->getFontSize();
+            } else {
+                cachedFontSize = Typography::BASE_FONT_SIZE;
             }
-            return Typography::BASE_FONT_SIZE;
+            break;
         default:
-            return Typography::BASE_FONT_SIZE;
+            cachedFontSize = Typography::BASE_FONT_SIZE;
+    }
+
+    cachedFontSizeParent = parent;
+    return cachedFontSize;
+}
+
+void LayoutObject::invalidateFontSizeCache() {
+    cachedFontSize = -1.0f;
+    cachedFontSizeParent = nullptr;
+    // Also invalidate children's caches since they may inherit from parent
+    for (const auto& child : children) {
+        child->invalidateFontSizeCache();
     }
 }
 
 void LayoutObject::setParent(LayoutObject* parent) {
+    // P1-5: Just set parent - getFontSize() will detect the change via cachedFontSizeParent check
     this->parent = parent;
 }
 
@@ -153,6 +176,7 @@ void TextLayoutObject::layout(const Size& availableSpace) {
     availableWidth = availableSpace.width;
     shapeText();
     wrapText(availableSpace.width);
+    computeCharStyles();  // P1-5: Pre-compute styles for painter
     Size textSize = computeIntrinsicSize();
     setRect(Rect(0, 0, availableSpace.width, textSize.height));
 }
@@ -385,6 +409,55 @@ const std::vector<InlineStyleRange>& TextLayoutObject::getStyleRanges() const {
     }
     static std::vector<InlineStyleRange> empty;
     return empty;
+}
+
+// P1-5: Pre-compute character-level styles during layout
+// This is done once per layout pass, not every paint call
+void TextLayoutObject::computeCharStyles() {
+    const std::string& fullText = sourceObject->getText();
+    int charCount = static_cast<int>(utf8::length(fullText));
+
+    const auto& styleRanges = getStyleRanges();
+    const auto& linkRanges = getLinkRanges();
+
+    // Check if recomputation is needed
+    if (computedCharStyles.cachedCharCount == charCount &&
+        computedCharStyles.cachedStyleRangeCount == styleRanges.size() &&
+        computedCharStyles.cachedLinkRangeCount == linkRanges.size()) {
+        return;  // Cache is still valid
+    }
+
+    // Clear and resize
+    computedCharStyles.charStyles.assign(charCount, TextStyle::Normal);
+    computedCharStyles.charLinkIdx.assign(charCount, -1);
+    computedCharStyles.isCodeStyle.assign(charCount, false);
+
+    // Fill in styles (O(m*n) where m = style ranges, n = avg range size)
+    for (const auto& sr : styleRanges) {
+        for (int i = sr.startChar; i < sr.endChar && i < charCount; i++) {
+            if (i >= 0) {
+                computedCharStyles.charStyles[i] = sr.style;
+                if (hasStyle(sr.style, TextStyle::Code)) {
+                    computedCharStyles.isCodeStyle[i] = true;
+                }
+            }
+        }
+    }
+
+    // Fill in link indices
+    for (size_t li = 0; li < linkRanges.size(); li++) {
+        const auto& lr = linkRanges[li];
+        for (int i = lr.startChar; i < lr.endChar && i < charCount; i++) {
+            if (i >= 0) {
+                computedCharStyles.charLinkIdx[i] = static_cast<int>(li);
+            }
+        }
+    }
+
+    // Update validation metadata
+    computedCharStyles.cachedCharCount = charCount;
+    computedCharStyles.cachedStyleRangeCount = styleRanges.size();
+    computedCharStyles.cachedLinkRangeCount = linkRanges.size();
 }
 
 ImageLayoutObject::ImageLayoutObject(const MarkdownObject* sourceObject) 
