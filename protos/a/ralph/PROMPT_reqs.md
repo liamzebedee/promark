@@ -1,0 +1,32 @@
+Interview me to understand the Job to Be Done.
+
+Ask about:
+- Who is the user? What's their context?
+- What outcome do they want to achieve?
+- What's painful about how they do it today?
+- What does success look like?
+
+Keep asking until the JTBD is crystal clear.
+Use AskUserQuestion tool for structured interview.
+
+Break this JTBD into distinct topics of concern.
+
+SCOPE TEST: "One Sentence Without 'And'"
+✓ "The color extraction system analyzes images to identify dominant colors"
+✗ "The user system handles authentication, profiles, and billing" → 3 topics
+
+If you need "and" to describe what it does, split it.
+
+List each topic that needs its own spec.
+
+For each topic of concern, create a spec file:
+  specs/[topic-slug].md
+
+Include:
+- Purpose: What problem does this solve?
+- Acceptance Criteria: Observable, verifiable outcomes
+- Edge Cases: What could go wrong?
+- Dependencies: What else does this need?
+
+Capture the WHY throughout. Tests verify WHAT works.
+Acceptance criteria should be behavioral (outcomes), not implementation (how).

@@ -16,7 +16,8 @@ OUTPUT = build/mdeditor.js
 # Compiler flags
 CXXFLAGS = -std=c++17 -O2 \
            -I../src \
-           -Wno-unused-parameter
+           -Wno-unused-parameter \
+           -DWEB_BUILD
 
 # Emscripten ports (auto-downloads and builds)
 PORTS = -sUSE_FREETYPE=1 \
@@ -33,7 +34,7 @@ MEM_FLAGS = -sALLOW_MEMORY_GROWTH=1 \
             -sINITIAL_MEMORY=67108864
 
 # Export settings
-EXPORT_FLAGS = -sEXPORTED_FUNCTIONS='["_main","_setContent","_getContent","_getSelectedText","_isDirty","_markClean","_handleKey","_insertText","_malloc","_free"]' \
+EXPORT_FLAGS = -sEXPORTED_FUNCTIONS='["_main","_setContent","_getContent","_getSelectedText","_isDirty","_markClean","_handleKey","_insertText","_resizeViewport","_malloc","_free"]' \
                -sEXPORTED_RUNTIME_METHODS='["UTF8ToString","stringToUTF8","lengthBytesUTF8"]'
 
 # Embed fonts and shaders

@@ -3,44 +3,162 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MD Editor</title>
+    <title>Promark</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Source+Serif+4:wght@400;600&display=swap');
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: #1a1a1a;
+            background: linear-gradient(180deg, #c0c0c0 0%, #e8e8e8 50%, #d0d0d0 100%);
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Source Serif 4', 'Times New Roman', Georgia, serif;
         }
         .container {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
         }
-        h1 { color: #fff; font-weight: 400; font-size: 24px; }
+        h1 {
+            font-family: 'Playfair Display', Georgia, serif;
+            color: #222;
+            font-weight: 500;
+            font-size: 28px;
+            letter-spacing: -0.5px;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 14px;
+            font-style: italic;
+            margin-top: -8px;
+        }
+        .warning {
+            background: linear-gradient(180deg, #4a90d9 0%, #2968b0 100%);
+            color: #fff;
+            font-size: 11px;
+            padding: 4px 12px;
+            border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
         #canvas {
-            border-radius: 8px;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
-            width: 900px;
-            height: 700px;
+            border-radius: 6px;
+            box-shadow:
+                0 2px 8px rgba(0, 0, 0, 0.3),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+                0 0 0 1px rgba(0, 0, 0, 0.2);
+            width: min(900px, calc(100vw - 32px));
+            height: min(700px, 70vh);
         }
-        .status { color: #666; font-size: 14px; }
-        .status.loading { color: #f90; }
-        .status.ready { color: #4a4; }
+        #mobile-input {
+            position: absolute;
+            left: -9999px;
+            opacity: 0;
+        }
+        @media (max-width: 768px) {
+            h1 { font-size: 22px; }
+            .subtitle { font-size: 12px; }
+            .container { gap: 8px; padding: 16px; }
+        }
+        .status {
+            color: #666;
+            font-size: 13px;
+        }
+        .status.loading {
+            color: #2968b0;
+        }
+        .status.ready {
+            color: #3a7340;
+        }
+        .footer {
+            color: #777;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .footer a {
+            color: #2968b0;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        .fps-counter {
+            position: fixed;
+            top: 12px;
+            right: 16px;
+            background: rgba(0,0,0,0.7);
+            color: #0f0;
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        .progress-container {
+            width: 200px;
+            height: 8px;
+            background: #999;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(180deg, #4a90d9 0%, #2968b0 100%);
+            border-radius: 4px;
+            transition: width 0.1s ease-out;
+        }
+        .progress-text {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .progress-container.hidden, .progress-text.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>MD Editor</h1>
-        <canvas id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+        <h1>Promark</h1>
+        <p class="subtitle">the professional markdown processor</p>
+        <span class="warning">indev, totally broken</span>
+        <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+        <input type="text" id="mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <textarea id="clipboard-helper" style="position:absolute;left:-9999px;"></textarea>
         <div id="status" class="status loading">Loading...</div>
+        <div class="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <div id="progress-text" class="progress-text">Downloading...</div>
+        <p class="footer">Programmed in C++, OpenGL. <a href="https://github.com/liamzebedee/promark" target="_blank">GitHub</a></p>
+        <div class="fps-counter"><span id="fps">500</span> FPS</div>
     </div>
 
     <script>
+        // Fake FPS counter lol
+        setInterval(function() {
+            document.getElementById('fps').textContent = Math.floor(480 + Math.random() * 40);
+        }, 100);
+
+        // Sync canvas buffer size with CSS display size
+        function resizeCanvas() {
+            var dpr = window.devicePixelRatio || 1;
+            var rect = canvas.getBoundingClientRect();
+            var w = Math.floor(rect.width * dpr);
+            var h = Math.floor(rect.height * dpr);
+            canvas.width = w;
+            canvas.height = h;
+            // Tell OpenGL about the new size
+            if (moduleReady && Module._resizeViewport) {
+                Module._resizeViewport(w, h);
+            }
+        }
+        window.addEventListener('resize', resizeCanvas);
+
         // GLFW key codes
         var GLFW_PRESS = 1;
         var GLFW_MOD_SHIFT = 0x0001;
@@ -59,17 +177,39 @@
         var clipboardHelper = document.getElementById('clipboard-helper');
         var moduleReady = false;
 
+        // Progress bar elements
+        var progressBar = document.getElementById('progress-bar');
+        var progressText = document.getElementById('progress-text');
+        var progressContainer = document.querySelector('.progress-container');
+
         // Module configuration
         var Module = {
             canvas: canvas,
             doNotCaptureKeyboard: true,
             print: function(t) { console.log(t); },
             printErr: function(t) { console.error(t); },
+            setStatus: function(text) {
+                if (text) {
+                    var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                    if (m) {
+                        var progress = (parseInt(m[2]) / parseInt(m[4])) * 100;
+                        progressBar.style.width = progress + '%';
+                        var mb = (parseInt(m[2]) / 1024 / 1024).toFixed(1);
+                        var totalMb = (parseInt(m[4]) / 1024 / 1024).toFixed(1);
+                        progressText.textContent = 'Downloading: ' + mb + ' / ' + totalMb + ' MB';
+                    } else {
+                        progressText.textContent = text;
+                    }
+                }
+            },
             onRuntimeInitialized: function() {
                 moduleReady = true;
                 document.getElementById('status').textContent = 'Ready';
                 document.getElementById('status').className = 'status ready';
+                progressContainer.classList.add('hidden');
+                progressText.classList.add('hidden');
                 canvas.focus();
+                resizeCanvas(); // Set initial size
                 console.log('Module ready, exports:', !!Module._handleKey, !!Module._insertText);
             }
         };
@@ -172,9 +312,44 @@
             e.preventDefault();
         });
 
+        // Mobile keyboard support
+        var mobileInput = document.getElementById('mobile-input');
+        var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        function focusForKeyboard() {
+            if (isMobile) {
+                mobileInput.focus();
+            } else {
+                canvas.focus();
+            }
+        }
+
         // Keep focus
-        canvas.addEventListener('click', function() {
-            canvas.focus();
+        canvas.addEventListener('click', focusForKeyboard);
+        canvas.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            focusForKeyboard();
+        });
+
+        // Mobile input handler
+        mobileInput.addEventListener('input', function(e) {
+            if (!moduleReady) return;
+            var text = mobileInput.value;
+            if (text) {
+                insertText(text);
+                mobileInput.value = '';
+            }
+        });
+
+        mobileInput.addEventListener('keydown', function(e) {
+            if (!moduleReady) return;
+            if (e.key === 'Backspace') {
+                e.preventDefault();
+                handleKey(KEY_MAP['Backspace'], 0);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                handleKey(KEY_MAP['Enter'], 0);
+            }
         });
 
         // Public API

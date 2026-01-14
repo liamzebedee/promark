@@ -484,14 +484,25 @@ void MarkdownRenderer::getCursorXY(int domPos, float& outX, float& outY) const {
         const auto& [layout, layoutDOMPos] = textLayouts[i];
         int domLen = layout->getDOMLength();
 
-        // Check if position is in this layout's range
-        // Use strict < for upper bound UNLESS this is the last layout
-        // This way, boundary positions (e.g., domPos == layoutDOMPos + domLen)
-        // will match the NEXT layout if one exists, placing the cursor at the
-        // start of the next line rather than the end of the current line.
+        // Check if position is in this layout's range.
+        // At boundaries, prefer the layout where cursor is at START (not END).
+        // This ensures: 1) After Enter, caret shows at start of new line
+        //               2) After typing, caret shows at end of text (unless at exact boundary)
+        //
+        // Logic: Use strict < unless this is the last layout, OR the next layout
+        // doesn't start at exactly this position (meaning we're within current layout).
         bool isLast = (i == textLayouts.size() - 1);
+        bool nextLayoutStartsHere = !isLast && (i + 1 < textLayouts.size()) &&
+                                    (textLayouts[i + 1].second == domPos);
+
+        // If we're at the exact end of this layout AND next layout starts here,
+        // let the next layout handle it (cursor at start of next, not end of current).
+        bool atExactEnd = (domPos == layoutDOMPos + domLen);
+        bool preferNext = atExactEnd && nextLayoutStartsHere;
+
         bool inRange = (domPos >= layoutDOMPos) &&
-                       (isLast ? (domPos <= layoutDOMPos + domLen) : (domPos < layoutDOMPos + domLen));
+                       (isLast ? (domPos <= layoutDOMPos + domLen) :
+                        (preferNext ? (domPos < layoutDOMPos + domLen) : (domPos <= layoutDOMPos + domLen)));
 
         if (inRange) {
             const Rect& rect = layout->getRect();

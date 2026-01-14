@@ -55,9 +55,31 @@ void cursorPosCallback(GLFWwindow* window, double x, double y) {
     }
 }
 
+// Sync canvas size with CSS display size
+void syncCanvasSize() {
+    double cssW, cssH;
+    emscripten_get_element_css_size("#canvas", &cssW, &cssH);
+
+    // Get device pixel ratio for sharp rendering on HiDPI
+    double dpr = emscripten_get_device_pixel_ratio();
+    int canvasW = (int)(cssW * dpr);
+    int canvasH = (int)(cssH * dpr);
+
+    // Only resize if changed
+    int curW, curH;
+    emscripten_get_canvas_element_size("#canvas", &curW, &curH);
+    if (curW != canvasW || curH != canvasH) {
+        emscripten_set_canvas_element_size("#canvas", canvasW, canvasH);
+        glfwSetWindowSize(window, canvasW, canvasH);
+    }
+}
+
 // Main loop called by Emscripten
 void mainLoop() {
     if (!window || !engine) return;
+
+    // Sync canvas size with CSS on each frame
+    syncCanvasSize();
 
     int width, height;
     glfwGetFramebufferSize(window, &width, &height);
@@ -122,6 +144,13 @@ EMSCRIPTEN_KEEPALIVE
 void insertText(const char* text) {
     if (engine) {
         engine->insertText(std::string(text));
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void resizeViewport(int width, int height) {
+    if (window) {
+        glfwSetWindowSize(window, width, height);
     }
 }
 

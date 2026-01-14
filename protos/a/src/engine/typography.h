@@ -6,7 +6,11 @@
 namespace Typography {
 
 // Base font size (body text)
+#ifdef WEB_BUILD
+constexpr float BASE_FONT_SIZE = 20.0f;  // Larger for mobile readability
+#else
 constexpr float BASE_FONT_SIZE = 16.0f;
+#endif
 
 // Power law exponent for heading scale
 // Each heading level is BASE * (SCALE_RATIO ^ (6 - level))

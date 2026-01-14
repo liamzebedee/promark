@@ -1,10 +1,11 @@
 #!/bin/bash
-# Usage: ./loop.sh [plan] [max_iterations]
+# Usage: ./loop.sh [keyword] [max_iterations]
 # Examples:
-#   ./loop.sh              # Build mode, unlimited iterations
-#   ./loop.sh 20           # Build mode, max 20 iterations
-#   ./loop.sh plan         # Plan mode, unlimited iterations
-#   ./loop.sh plan 5       # Plan mode, max 5 iterations
+#   ./loop.sh              # Uses PROMPT_build.md, unlimited iterations
+#   ./loop.sh 20           # Uses PROMPT_build.md, max 20 iterations
+#   ./loop.sh plan         # Uses PROMPT_plan.md, unlimited iterations
+#   ./loop.sh fix 5        # Uses PROMPT_fix.md, max 5 iterations
+#   ./loop.sh reqs         # Uses PROMPT_reqs.md, unlimited iterations
 
 # Get the directory where this script lives
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,18 +14,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/claude-format.sh"
 
 # Parse arguments
-if [ "$1" = "plan" ]; then
-    # Plan mode
-    MODE="plan"
-    PROMPT_FILE="ralph/PROMPT_plan.md"
-    MAX_ITERATIONS=${2:-0}
-elif [[ "$1" =~ ^[0-9]+$ ]]; then
-    # Build mode with max iterations
+if [[ "$1" =~ ^[0-9]+$ ]]; then
+    # First arg is a number - use default "build" with max iterations
     MODE="build"
     PROMPT_FILE="ralph/PROMPT_build.md"
     MAX_ITERATIONS=$1
+elif [ -n "$1" ]; then
+    # First arg is a keyword
+    MODE="$1"
+    PROMPT_FILE="ralph/PROMPT_${1}.md"
+    MAX_ITERATIONS=${2:-0}
 else
-    # Build mode, unlimited (no arguments or invalid input)
+    # No arguments - default to build
     MODE="build"
     PROMPT_FILE="ralph/PROMPT_build.md"
     MAX_ITERATIONS=0
