@@ -198,11 +198,15 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/layout_objects.cpp`, `src/engine/layout_objects.h`
 
 ### P1-6: Upgrade DrawText to Use Pre-Shaped Glyph Data
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: P1-3
-- **Problem**: `DrawTextOp` has raw string (`paint_operations.h:64`)
-- **Required**: Reference to ShapedTextRun from layout with glyph IDs and positions
+- **Solution**: Added pre-shaped text infrastructure with backward-compatible API:
+  - Added ShapedTextRun struct with pre-decoded codepoints and x positions
+  - Extended DrawTextOp to support shaped data with backward-compatible API
+  - Painter::paintText() creates ShapedTextRun with pre-decoded UTF-8 codepoints and pre-computed positions
+  - Infrastructure in place for future backend optimization
+  - All 12 tests pass
 - **Spec Reference**: `specs/03-rendering-pipeline.md` - "glyph data (pre-shaped by layout)"
 - **Files**: `src/engine/paint_operations.h`, `src/engine/painter.cpp`
 
@@ -445,4 +449,4 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P1-5 marked COMPLETED (font size caching and character-level style pre-computation)*
+*Last updated: 2026-01-14 - P1-6 marked COMPLETED (pre-shaped glyph data with ShapedTextRun)*
