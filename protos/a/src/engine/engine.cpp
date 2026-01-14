@@ -98,11 +98,9 @@ bool Engine::initialize() {
         }
     }
 
-    // Pass font faces to markdown renderer for glyph metrics
-    markdownRenderer->setFontFace(face);
-    if (monoFace) {
-        markdownRenderer->setMonoFontFace(monoFace);
-    }
+    // Create font provider and pass to markdown renderer for layout/glyph metrics
+    fontProvider = std::make_unique<FreeTypeFontProvider>(face, monoFace);
+    markdownRenderer->setFontProvider(fontProvider.get());
 
     // Test basic OpenGL functionality
     GLenum error = glGetError();

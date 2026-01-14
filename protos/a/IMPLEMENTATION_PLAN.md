@@ -115,19 +115,23 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/paint_operations.h`, `src/engine/painter.cpp`
 
 ### P1-3: Create FontProvider Abstraction
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: None
-- **Problem**: FT_Face leaked in 23+ locations across public APIs:
-  - `engine.h:69-70`
-  - `markdown_renderer.h:30-31`
-  - `layout_engine.h:13-16, 22-23`
-  - `layout_objects.h:107-108, 122-123`
-  - `rasterizer.h:52-56, 60, 63`
-  - `batch_renderer.h:36`
-  - `glyph_atlas.h:36`
+- **Solution**: Created FontProvider abstraction to remove FT_Face from layout layer public APIs:
+  - Created `FontProvider` abstract interface in `font_provider.h` with:
+    - `getGlyphAdvance(codepoint, fontSize, monospace)` for glyph measurement
+    - `getLineHeight(fontSize, monospace)` for line metrics
+    - `getFallbackCharWidth(fontSize, monospace)` with default implementation
+  - Created `FreeTypeFontProvider` concrete implementation that wraps FT_Face
+  - Updated `LayoutEngine` to use `FontProvider*` instead of `FT_Face`
+  - Updated `TextLayoutObject` to use `FontProvider*` for text measurement
+  - Updated `MarkdownRenderer` to accept `FontProvider*` via `setFontProvider()`
+  - Updated `Engine` to create and own `FreeTypeFontProvider`
+  - Note: `FT_Face` remains in rendering layer (Rasterizer, BatchRenderer, GlyphAtlas) which is appropriate since they're internal to the rendering backend
+  - All 12 tests pass
 - **Spec Reference**: `specs/02-layout-system.md` - "No Platform Types in Public APIs"
-- **Files**: All headers listed above
+- **Files**: `src/engine/font_provider.h`, `src/engine/freetype_font_provider.h`, `src/engine/freetype_font_provider.cpp`, `src/engine/layout_engine.h`, `src/engine/layout_objects.h`, `src/engine/markdown_renderer.h`, `src/engine/engine.h`
 
 ### P1-4: Implement Operation-Based Undo/Redo
 - **Status**: COMPLETED
@@ -362,7 +366,7 @@ P0-5 (Inline tree) ───┬──> P2-2 (LineBreak/ThematicBreak)
 
 P1-1 (DrawRect) ──────> P3-5 (Consolidate rect ops) [BOTH COMPLETE]
 
-P1-3 (FontProvider) ──> P1-6 (Pre-shaped glyph data)
+P1-3 (FontProvider) ──> P1-6 (Pre-shaped glyph data) [P1-3 COMPLETE]
 ```
 
 ---
@@ -375,16 +379,16 @@ These groups can be worked on concurrently:
 - P0-3, ~~P1-1~~, ~~P1-7~~ (P1-1 and P1-7 complete)
 
 **Group B - Text Model Foundation:**
-- P0-1 → P0-2
+- ~~P0-1~~ → ~~P0-2~~ (both complete)
 
 **Group C - Layout Authority:**
-- P0-4, P1-5, P2-5, P2-6
+- ~~P0-4~~, P1-5, P2-5, P2-6 (P0-4 complete)
 
 **Group D - Parser/Document Model:**
 - P0-5, P2-1
 
 **Group E - Independent Cleanup:**
-- P1-3, P3-7
+- ~~P1-3~~, P3-7 (P1-3 complete)
 
 ---
 
@@ -407,4 +411,4 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P1-4 (Operation-Based Undo/Redo) completed with full redo support and scroll position restoration*
+*Last updated: 2026-01-14 - P1-3 (FontProvider Abstraction) completed - removes FT_Face from layout layer public APIs*

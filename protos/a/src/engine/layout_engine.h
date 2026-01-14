@@ -1,8 +1,7 @@
 #pragma once
 #include "markdown_objects.h"
 #include "layout_objects.h"
-#include <ft2build.h>
-#include FT_FREETYPE_H
+#include "font_provider.h"
 #include <memory>
 
 class LayoutEngine {
@@ -10,17 +9,16 @@ public:
     LayoutEngine();
     ~LayoutEngine();
 
-    void setFontFace(FT_Face face);
-    void setMonoFontFace(FT_Face face);
-    FT_Face getFontFace() const;
-    FT_Face getMonoFontFace() const;
+    // Set font provider for text measurement
+    // LayoutEngine does NOT take ownership - provider must outlive the engine
+    void setFontProvider(const FontProvider* provider);
+    const FontProvider* getFontProvider() const;
 
     std::unique_ptr<LayoutObject> createLayoutTree(const MarkdownObject* objectTree);
     void performLayout(LayoutObject* layoutRoot, const Size& availableSpace);
 
 private:
-    FT_Face fontFace;
-    FT_Face monoFontFace;
+    const FontProvider* fontProvider;
 
     std::unique_ptr<LayoutObject> createLayoutObject(const MarkdownObject* object, bool inCodeBlock = false);
     std::unique_ptr<LayoutObject> createLayoutTree(const MarkdownObject* objectTree, bool inCodeBlock);

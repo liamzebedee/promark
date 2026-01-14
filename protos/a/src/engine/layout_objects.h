@@ -1,7 +1,6 @@
 #pragma once
 #include "markdown_objects.h"
-#include <ft2build.h>
-#include FT_FREETYPE_H
+#include "font_provider.h"
 #include <vector>
 #include <memory>
 
@@ -103,9 +102,8 @@ public:
     int getLineForChar(int charIndex) const;
     float getCharXOffsetInLine(int charIndex) const;
 
-    // FreeType face for glyph metrics
-    void setFontFace(FT_Face face);
-    void setMonoFontFace(FT_Face face);
+    // Font provider for glyph metrics (does NOT take ownership)
+    void setFontProvider(const FontProvider* provider);
     void setMonospace(bool mono) { isMonospace = mono; }
     bool getMonospace() const { return isMonospace; }
 
@@ -119,8 +117,7 @@ private:
     std::vector<GlyphRun> glyphRuns;
     std::vector<float> charXOffsets;  // Cumulative x offset for each character
     std::vector<LineInfo> lines;
-    FT_Face fontFace;
-    FT_Face monoFontFace;  // For inline code
+    const FontProvider* fontProvider;
     float availableWidth;
     bool isMonospace = false;
     void shapeText();

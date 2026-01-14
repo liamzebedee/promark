@@ -8,6 +8,7 @@
 #include "clipboard.h"
 #include "batch_renderer.h"
 #include "glyph_atlas.h"
+#include "freetype_font_provider.h"
 
 // Operation-based undo/redo system
 // Stores the actual operation performed, enabling efficient undo/redo
@@ -81,6 +82,9 @@ private:
     FT_Face face;
     FT_Face monoFace;
     bool fontLoaded;
+
+    // Font provider for layout layer (abstracts FT_Face)
+    std::unique_ptr<FreeTypeFontProvider> fontProvider;
 
     bool initFreeType();
     bool loadFont(const char* fontPath);

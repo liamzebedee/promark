@@ -100,7 +100,7 @@ void InlineLayoutObject::layout(const Size& availableSpace) {
 }
 
 TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
-    : LayoutObject(sourceObject, LayoutFlow::Inline), fontFace(nullptr), monoFontFace(nullptr), availableWidth(0) {
+    : LayoutObject(sourceObject, LayoutFlow::Inline), fontProvider(nullptr), availableWidth(0) {
 }
 
 Size TextLayoutObject::computeIntrinsicSize() const {
@@ -126,19 +126,13 @@ Size TextLayoutObject::computeIntrinsicSize() const {
         return Size(charXOffsets.back(), lineHeight);
     }
 
-    // Fallback: compute width using FreeType or monospace estimate with UTF-8
+    // Compute width using FontProvider or fallback estimate
     float width = 0.0f;
-    if (fontFace) {
-        FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
+    if (fontProvider) {
         size_t pos = 0;
         while (pos < text.length()) {
             uint32_t codepoint = utf8::decode(text, pos);
-            FT_UInt glyphIndex = FT_Get_Char_Index(fontFace, static_cast<FT_ULong>(codepoint));
-            if (FT_Load_Glyph(fontFace, glyphIndex, FT_LOAD_DEFAULT) == 0) {
-                width += fontFace->glyph->advance.x / 64.0f;
-            } else {
-                width += fontSize * 0.6f;
-            }
+            width += fontProvider->getGlyphAdvance(codepoint, fontSize, isMonospace);
         }
     } else {
         width = utf8::length(text) * fontSize * 0.6f;
@@ -167,12 +161,8 @@ const std::vector<TextLayoutObject::GlyphRun>& TextLayoutObject::getGlyphRuns() 
     return glyphRuns;
 }
 
-void TextLayoutObject::setFontFace(FT_Face face) {
-    fontFace = face;
-}
-
-void TextLayoutObject::setMonoFontFace(FT_Face face) {
-    monoFontFace = face;
+void TextLayoutObject::setFontProvider(const FontProvider* provider) {
+    fontProvider = provider;
 }
 
 int TextLayoutObject::getDOMLength() const {
@@ -208,27 +198,19 @@ void TextLayoutObject::shapeText() {
     // Get style ranges and pre-compute code style flags for O(1) lookup
     const auto& styleRanges = getStyleRanges();
     size_t textCodepoints = utf8::length(text);
-    std::vector<bool> isCode(textCodepoints, false);
+    std::vector<bool> isCodeStyle(textCodepoints, false);
 
     // Mark code-styled characters (O(m) where m = number of style ranges)
     for (const auto& sr : styleRanges) {
         if (hasStyle(sr.style, TextStyle::Code)) {
             for (int i = sr.startChar; i < sr.endChar && i < (int)textCodepoints; i++) {
-                if (i >= 0) isCode[i] = true;
+                if (i >= 0) isCodeStyle[i] = true;
             }
         }
     }
 
-    // Set up both fonts if available
-    if (fontFace) {
-        FT_Set_Pixel_Sizes(fontFace, 0, static_cast<FT_UInt>(fontSize));
-    }
-    if (monoFontFace) {
-        FT_Set_Pixel_Sizes(monoFontFace, 0, static_cast<FT_UInt>(fontSize));
-    }
-
-    if (fontFace) {
-        // Use FreeType for accurate glyph metrics with UTF-8 decoding
+    if (fontProvider) {
+        // Use FontProvider for accurate glyph metrics with UTF-8 decoding
         size_t pos = 0;
         int charIdx = 0;
         while (pos < text.length()) {
@@ -241,19 +223,9 @@ void TextLayoutObject::shapeText() {
                 continue;
             }
 
-            // Choose font based on whether this character is inline code
-            FT_Face faceToUse = fontFace;
-            if (monoFontFace && charIdx < (int)isCode.size() && isCode[charIdx]) {
-                faceToUse = monoFontFace;
-            }
-
-            FT_UInt glyphIndex = FT_Get_Char_Index(faceToUse, static_cast<FT_ULong>(codepoint));
-            if (FT_Load_Glyph(faceToUse, glyphIndex, FT_LOAD_DEFAULT) == 0) {
-                x += faceToUse->glyph->advance.x / 64.0f;  // advance in 1/64 pixels
-            } else {
-                // Fallback for missing glyphs
-                x += fontSize * 0.6f;
-            }
+            // Use monospace font if this is a code block or inline code character
+            bool useMono = isMonospace || (charIdx < (int)isCodeStyle.size() && isCodeStyle[charIdx]);
+            x += fontProvider->getGlyphAdvance(codepoint, fontSize, useMono);
             charXOffsets.push_back(x);
             charIdx++;
         }

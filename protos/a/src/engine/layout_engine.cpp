@@ -2,26 +2,18 @@
 #include "typography.h"
 #include <iostream>
 
-LayoutEngine::LayoutEngine() : fontFace(nullptr), monoFontFace(nullptr) {
+LayoutEngine::LayoutEngine() : fontProvider(nullptr) {
 }
 
 LayoutEngine::~LayoutEngine() {
 }
 
-void LayoutEngine::setFontFace(FT_Face face) {
-    fontFace = face;
+void LayoutEngine::setFontProvider(const FontProvider* provider) {
+    fontProvider = provider;
 }
 
-void LayoutEngine::setMonoFontFace(FT_Face face) {
-    monoFontFace = face;
-}
-
-FT_Face LayoutEngine::getFontFace() const {
-    return fontFace;
-}
-
-FT_Face LayoutEngine::getMonoFontFace() const {
-    return monoFontFace;
+const FontProvider* LayoutEngine::getFontProvider() const {
+    return fontProvider;
 }
 
 std::unique_ptr<LayoutObject> LayoutEngine::createLayoutTree(const MarkdownObject* objectTree, bool inCodeBlock) {
@@ -96,15 +88,9 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
 
         case MarkdownObjectType::Text: {
             auto textLayout = std::make_unique<TextLayoutObject>(object);
-            if (inCodeBlock && monoFontFace) {
-                textLayout->setFontFace(monoFontFace);
+            textLayout->setFontProvider(fontProvider);
+            if (inCodeBlock) {
                 textLayout->setMonospace(true);
-            } else {
-                textLayout->setFontFace(fontFace);
-                // Also provide mono font for inline code width calculations
-                if (monoFontFace) {
-                    textLayout->setMonoFontFace(monoFontFace);
-                }
             }
             return textLayout;
         }

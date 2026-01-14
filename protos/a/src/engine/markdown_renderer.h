@@ -4,8 +4,7 @@
 #include "layout_engine.h"
 #include "painter.h"
 #include "rasterizer.h"
-#include <ft2build.h>
-#include FT_FREETYPE_H
+#include "font_provider.h"
 #include <memory>
 #include <cstdint>
 
@@ -35,8 +34,7 @@ public:
     void setTextBuffer(std::unique_ptr<TextBuffer> buffer);
 
     void setCaretState(const CaretState& state);
-    void setFontFace(FT_Face face);
-    void setMonoFontFace(FT_Face face);
+    void setFontProvider(const FontProvider* provider);
     void render(const Size& viewportSize, float scrollOffsetY = 0.0f);
 
     // Manual pipeline control for debugging/testing

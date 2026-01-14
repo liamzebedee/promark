@@ -11,4 +11,5 @@ ENGINE_SRC = src/engine/engine.cpp \
              src/engine/rasterizer.cpp \
              src/engine/markdown_renderer.cpp \
              src/engine/glyph_atlas.cpp \
-             src/engine/batch_renderer.cpp
+             src/engine/batch_renderer.cpp \
+             src/engine/freetype_font_provider.cpp

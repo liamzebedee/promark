@@ -47,14 +47,8 @@ void MarkdownRenderer::setCaretState(const CaretState& state) {
     }
 }
 
-void MarkdownRenderer::setFontFace(FT_Face face) {
-    layoutEngine->setFontFace(face);
-    needsRelayout = true;
-    needsRepaint = true;
-}
-
-void MarkdownRenderer::setMonoFontFace(FT_Face face) {
-    layoutEngine->setMonoFontFace(face);
+void MarkdownRenderer::setFontProvider(const FontProvider* provider) {
+    layoutEngine->setFontProvider(provider);
     needsRelayout = true;
     needsRepaint = true;
 }
