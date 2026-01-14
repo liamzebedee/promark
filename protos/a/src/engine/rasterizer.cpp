@@ -1,6 +1,5 @@
 #include "rasterizer.h"
 #include "utf8.h"
-#include "gl_includes.h"
 #include <map>
 #include <iostream>
 #include <cmath>
@@ -14,20 +13,18 @@
 
 Rasterizer::Rasterizer() : faceRegular(nullptr), faceBold(nullptr),
     faceItalic(nullptr), faceBoldItalic(nullptr), faceMono(nullptr), fontLoaded(false),
-    gl2Initialized(false) {
+    backend(nullptr) {
     initializeFont();
     loadMonoFont();
-
-    // Initialize GL2 renderer
-    atlas = std::make_unique<GlyphAtlas>(1024, 1024);
-    batchRenderer = std::make_unique<BatchRenderer>();
 }
 
 Rasterizer::~Rasterizer() {
-    // Clean up any cached image textures
-    for (auto& pair : imageCache) {
-        if (pair.second.textureId != 0) {
-            glDeleteTextures(1, &pair.second.textureId);
+    // Clean up any cached image textures via backend
+    if (backend) {
+        for (auto& pair : imageCache) {
+            if (pair.second.textureId != 0) {
+                backend->deleteTexture(pair.second.textureId);
+            }
         }
     }
 
@@ -42,17 +39,17 @@ Rasterizer::~Rasterizer() {
     }
 }
 
+void Rasterizer::setBackend(RenderBackend* b) {
+    backend = b;
+}
+
 void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY, bool caretVisible) {
-    // Initialize GL2 renderer on first use (need OpenGL context to be ready)
-    if (!gl2Initialized) {
-        atlas->init();
-        batchRenderer->init();
-        batchRenderer->setAtlas(atlas.get());
-        gl2Initialized = true;
+    if (!backend) {
+        std::cerr << "Rasterizer::rasterize called without backend set!" << std::endl;
+        return;
     }
 
-    batchRenderer->setViewport(viewport.size.width, viewport.size.height, scrollOffsetY);
-    batchRenderer->begin();
+    backend->setScrollOffset(scrollOffsetY);
 
     // Execute all paint operations
     for (const auto& op : displayList) {
@@ -72,7 +69,7 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport,
         }
     }
 
-    batchRenderer->flush();
+    backend->flush();
 }
 
 void Rasterizer::executeDrawRect(const DrawRectOp& op, bool caretVisible) {
@@ -87,15 +84,15 @@ void Rasterizer::executeDrawRect(const DrawRectOp& op, bool caretVisible) {
         case RectRole::Background:
         case RectRole::Selection:
             // Filled rectangles
-            batchRenderer->drawRect(rect.position.x, rect.position.y,
-                                    rect.size.width, rect.size.height, r, g, b, a);
+            backend->drawRect(rect.position.x, rect.position.y,
+                              rect.size.width, rect.size.height, r, g, b, a);
             break;
 
         case RectRole::Caret:
             // Only draw caret if visible (for blinking)
             if (caretVisible) {
-                batchRenderer->drawRect(rect.position.x, rect.position.y,
-                                        rect.size.width, rect.size.height, r, g, b, a);
+                backend->drawRect(rect.position.x, rect.position.y,
+                                  rect.size.width, rect.size.height, r, g, b, a);
             }
             break;
 
@@ -104,13 +101,13 @@ void Rasterizer::executeDrawRect(const DrawRectOp& op, bool caretVisible) {
             {
                 float t = 1.0f;  // Border thickness
                 // Top
-                batchRenderer->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
+                backend->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
                 // Bottom
-                batchRenderer->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
+                backend->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
                 // Left
-                batchRenderer->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
+                backend->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
                 // Right
-                batchRenderer->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
+                backend->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
             }
             break;
 
@@ -119,20 +116,20 @@ void Rasterizer::executeDrawRect(const DrawRectOp& op, bool caretVisible) {
             {
                 float t = 2.0f;  // Debug border thickness
                 // Top
-                batchRenderer->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
+                backend->drawRect(rect.position.x, rect.position.y, rect.size.width, t, r, g, b, a);
                 // Bottom
-                batchRenderer->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
+                backend->drawRect(rect.position.x, rect.position.y + rect.size.height - t, rect.size.width, t, r, g, b, a);
                 // Left
-                batchRenderer->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
+                backend->drawRect(rect.position.x, rect.position.y, t, rect.size.height, r, g, b, a);
                 // Right
-                batchRenderer->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
+                backend->drawRect(rect.position.x + rect.size.width - t, rect.position.y, t, rect.size.height, r, g, b, a);
             }
             break;
     }
 }
 
 void Rasterizer::executeDrawText(const DrawTextOp& op) {
-    if (!fontLoaded) {
+    if (!fontLoaded || !backend) {
         return;
     }
 
@@ -146,13 +143,15 @@ void Rasterizer::executeDrawText(const DrawTextOp& op) {
     FT_Face face = getFaceForStyle(style, monospace);
     if (!face) return;
 
-    batchRenderer->drawText(text, position.x, position.y,
-                            color.r / 255.0f, color.g / 255.0f,
-                            color.b / 255.0f, color.a / 255.0f,
-                            fontSize, style, monospace, face);
+    backend->drawText(text, position.x, position.y,
+                      color.r / 255.0f, color.g / 255.0f,
+                      color.b / 255.0f, color.a / 255.0f,
+                      fontSize, style, monospace, face);
 }
 
 void Rasterizer::executeDrawImage(const DrawImageOp& op) {
+    if (!backend) return;
+
     const Rect& rect = op.getDestRect();
     const Rect& srcRect = op.getSourceRect();
     const Color& tint = op.getTintColor();
@@ -171,17 +170,19 @@ void Rasterizer::executeDrawImage(const DrawImageOp& op) {
     }
 
     if (textureId != 0) {
-        batchRenderer->drawImage(rect.position.x, rect.position.y,
-                                  rect.size.width, rect.size.height,
-                                  textureId,
-                                  srcRect.position.x, srcRect.position.y,
-                                  srcRect.size.width, srcRect.size.height,
-                                  tint.r / 255.0f, tint.g / 255.0f,
-                                  tint.b / 255.0f, tint.a / 255.0f);
+        backend->drawImage(rect.position.x, rect.position.y,
+                           rect.size.width, rect.size.height,
+                           textureId,
+                           srcRect.position.x, srcRect.position.y,
+                           srcRect.size.width, srcRect.size.height,
+                           tint.r / 255.0f, tint.g / 255.0f,
+                           tint.b / 255.0f, tint.a / 255.0f);
     }
 }
 
 void Rasterizer::loadImage(const std::string& imagePath) {
+    if (!backend) return;
+
     ImageData imgData;
     bool loaded = false;
 
@@ -208,14 +209,9 @@ void Rasterizer::loadImage(const std::string& imagePath) {
         imgData.pixels.resize(imgData.width * imgData.height * 4, 128);
     }
 
-    // Create OpenGL texture
-    glGenTextures(1, &imgData.textureId);
-    glBindTexture(GL_TEXTURE_2D, imgData.textureId);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imgData.width, imgData.height,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, imgData.pixels.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    // Create texture via backend (no direct GL calls)
+    imgData.textureId = backend->createTexture(imgData.width, imgData.height,
+                                                imgData.pixels.data(), true);
 
     imageCache[imagePath] = imgData;
 }
@@ -476,6 +472,8 @@ FT_Face Rasterizer::getFaceForStyle(TextStyle style, bool monospace) {
 }
 
 void Rasterizer::executeDrawLine(const DrawLineOp& op) {
+    if (!backend) return;
+
     const Point& start = op.getStart();
     const Point& end = op.getEnd();
     float thickness = op.getThickness();
@@ -483,19 +481,5 @@ void Rasterizer::executeDrawLine(const DrawLineOp& op) {
     float r = color.r / 255.0f, g = color.g / 255.0f;
     float b = color.b / 255.0f, a = color.a / 255.0f;
 
-    // Draw line as a thin rectangle
-    float dx = end.x - start.x;
-    float dy = end.y - start.y;
-
-    if (std::abs(dx) > std::abs(dy)) {
-        // Horizontal-ish line
-        float minX = std::min(start.x, end.x);
-        float y = start.y - thickness / 2.0f;
-        batchRenderer->drawRect(minX, y, std::abs(dx), thickness, r, g, b, a);
-    } else {
-        // Vertical-ish line
-        float minY = std::min(start.y, end.y);
-        float x = start.x - thickness / 2.0f;
-        batchRenderer->drawRect(x, minY, thickness, std::abs(dy), r, g, b, a);
-    }
+    backend->drawLine(start.x, start.y, end.x, end.y, thickness, r, g, b, a);
 }

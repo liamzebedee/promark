@@ -1,6 +1,5 @@
 #include "engine.h"
 #include "typography.h"
-#include "gl_includes.h"
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <cstring>
@@ -10,7 +9,7 @@
 Engine::Engine() : wantsToClose(false), leftMouseHeld(false), lastClickTime(0), lastClickX(0), lastClickY(0), clickCount(0),
                    scrollOffset(0.0f), contentHeight(0.0f), viewportHeight(0),
                    fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
-                   viewportWidth(800), uiRendererInitialized(false),
+                   viewportWidth(800),
                    caretAnimX(0), caretAnimY(0),
                    caretTargetX(0), caretTargetY(0), lastBlinkTime(0), caretVisible(true),
                    showRaw(false) {
@@ -34,15 +33,15 @@ Engine::~Engine() {
 }
 
 bool Engine::initialize() {
-    std::cout << "OpenGL Version: " << glGetString(GL_VERSION) << std::endl;
-    std::cout << "OpenGL Vendor: " << glGetString(GL_VENDOR) << std::endl;
-    std::cout << "OpenGL Renderer: " << glGetString(GL_RENDERER) << std::endl;
-    
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-#ifndef __EMSCRIPTEN__
-    glEnable(GL_TEXTURE_2D);  // Not needed/valid in ES 2.0
-#endif
+    // Create and initialize the render backend (single authority for all GL calls)
+    renderBackend = std::make_unique<OpenGLBackend>();
+    if (!renderBackend->init()) {
+        std::cerr << "Failed to initialize render backend" << std::endl;
+        return false;
+    }
+
+    // Pass backend to markdown renderer's rasterizer
+    markdownRenderer->setBackend(renderBackend.get());
 
     // Initialize FreeType
     if (!initFreeType()) {
@@ -102,13 +101,6 @@ bool Engine::initialize() {
     fontProvider = std::make_unique<FreeTypeFontProvider>(face, monoFace);
     markdownRenderer->setFontProvider(fontProvider.get());
 
-    // Test basic OpenGL functionality
-    GLenum error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::cerr << "OpenGL error during initialization: " << error << std::endl;
-        return false;
-    }
-    
     std::cout << "Engine initialized successfully" << std::endl;
     return true;
 }
@@ -124,16 +116,16 @@ void Engine::render(int width, int height) {
     if (scrollOffset < 0) scrollOffset = 0;
     if (scrollOffset > maxScroll) scrollOffset = maxScroll;
 
-    glViewport(0, 0, width, height);
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    // Begin frame with the render backend
+    renderBackend->beginFrame(width, height);
+    renderBackend->setViewport(0, 0, width, height);
+    renderBackend->clear(1.0f, 1.0f, 1.0f, 1.0f);
 
     // Render toolbar at top (fixed position, no scroll)
     renderToolbar(width);
 
     // Set up clipping for content area (below toolbar)
-    glEnable(GL_SCISSOR_TEST);
-    glScissor(0, 0, width, height - TOOLBAR_HEIGHT);
+    renderBackend->pushClip(0, 0, width, height - TOOLBAR_HEIGHT);
 
     // Update cursor blink (320ms cycle)
     double currentTime = glfwGetTime();
@@ -173,8 +165,8 @@ void Engine::render(int width, int height) {
         updateCaretAnimation();
     }
 
-    // Disable scissor test before drawing fixed UI elements
-    glDisable(GL_SCISSOR_TEST);
+    // Pop clip before drawing fixed UI elements
+    renderBackend->popClip();
 
     // Draw scrollbar if content is taller than content area
     if (contentHeight > contentAreaHeight) {
@@ -208,12 +200,13 @@ void Engine::render(int width, int height) {
             thumbY = trackTop + scrollRatio * (trackHeight - thumbHeight);
         }
 
-        // Draw scrollbar thumb using batch renderer (ES 2.0 compatible)
-        uiRenderer->setViewport(width, height);
-        uiRenderer->begin();
-        uiRenderer->drawRect(trackX, thumbY, scrollbarWidth, thumbHeight, 0.5f, 0.5f, 0.5f, 0.5f);
-        uiRenderer->flush();
+        // Draw scrollbar thumb using render backend
+        renderBackend->setScrollOffset(0);  // No scroll for fixed UI
+        renderBackend->drawRect(trackX, thumbY, scrollbarWidth, thumbHeight, 0.5f, 0.5f, 0.5f, 0.5f);
+        renderBackend->flush();
     }
+
+    renderBackend->endFrame();
 }
 
 void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
@@ -1067,13 +1060,8 @@ float Engine::getCursorYRaw() {
     float maxLineWidth = viewportWidth - leftMargin - rightMargin;
     float topMargin = Typography::DOCUMENT_MARGIN;  // Content space, no toolbar offset
 
-    // Calculate character width for monospace
-    float charWidth = fontSize * 0.6f;
-    if (monoFace && uiAtlas) {
-        FT_Set_Pixel_Sizes(monoFace, 0, static_cast<FT_UInt>(fontSize));
-        const AtlasGlyph* g = uiAtlas->get('M', fontSize, TextStyle::Normal, true, monoFace);
-        if (g) charWidth = g->advance;
-    }
+    // Calculate character width for monospace using fontProvider
+    float charWidth = fontProvider->getGlyphAdvance('M', static_cast<int>(fontSize), true);
 
     float lineY = topMargin + fontSize;
     float lineX = 0;
@@ -1132,13 +1120,8 @@ int Engine::hitTestRaw(float x, float y) {
     float maxLineWidth = viewportWidth - leftMargin - rightMargin;
     float topMargin = TOOLBAR_HEIGHT + Typography::DOCUMENT_MARGIN - scrollOffset;
 
-    // Calculate character width for monospace
-    float charWidth = fontSize * 0.6f;
-    if (monoFace && uiAtlas) {
-        FT_Set_Pixel_Sizes(monoFace, 0, static_cast<FT_UInt>(fontSize));
-        const AtlasGlyph* g = uiAtlas->get('M', fontSize, TextStyle::Normal, true, monoFace);
-        if (g) charWidth = g->advance;
-    }
+    // Calculate character width for monospace using fontProvider
+    float charWidth = fontProvider->getGlyphAdvance('M', static_cast<int>(fontSize), true);
 
     // Build line structure matching renderRawText
     struct RawLine {
@@ -1240,15 +1223,7 @@ int Engine::hitTestRaw(float x, float y) {
 }
 
 void Engine::renderRawText(int width, int height) {
-    // Initialize UI renderer if needed
-    if (!uiRendererInitialized) {
-        uiAtlas = std::make_unique<GlyphAtlas>(512, 512);
-        uiRenderer = std::make_unique<BatchRenderer>();
-        uiAtlas->init();
-        uiRenderer->init();
-        uiRenderer->setAtlas(uiAtlas.get());
-        uiRendererInitialized = true;
-    }
+    (void)height;  // Unused after removing uiRenderer
 
     float fontSize = Typography::BASE_FONT_SIZE;
     float lineHeight = fontSize * 1.2f;
@@ -1257,13 +1232,8 @@ void Engine::renderRawText(int width, int height) {
     float maxLineWidth = width - leftMargin - rightMargin;
     float topMargin = TOOLBAR_HEIGHT + Typography::DOCUMENT_MARGIN - scrollOffset;
 
-    // Calculate character width for monospace
-    float charWidth = fontSize * 0.6f;
-    if (monoFace) {
-        FT_Set_Pixel_Sizes(monoFace, 0, static_cast<FT_UInt>(fontSize));
-        const AtlasGlyph* g = uiAtlas->get('M', fontSize, TextStyle::Normal, true, monoFace);
-        if (g) charWidth = g->advance;
-    }
+    // Calculate character width for monospace using fontProvider
+    float charWidth = fontProvider->getGlyphAdvance('M', static_cast<int>(fontSize), true);
 
     // Build wrapped lines with syntax highlighting info
     struct RenderChar {
@@ -1410,8 +1380,8 @@ void Engine::renderRawText(int width, int height) {
         lines.push_back(currentLine);
     }
 
-    uiRenderer->setViewport(width, height);
-    uiRenderer->begin();
+    // Set scroll offset for raw text rendering
+    renderBackend->setScrollOffset(0);  // Top margin already includes scroll offset
 
     // Draw selection background
     int selStart = std::min(selectionStart, selectionEnd);
@@ -1422,7 +1392,7 @@ void Engine::renderRawText(int width, int height) {
                 int idx = line.chars[j].srcIndex;
                 if (idx >= selStart && idx < selEnd) {
                     float selX = leftMargin + j * charWidth;
-                    uiRenderer->drawRect(selX, line.y - fontSize, charWidth, lineHeight, 0.68f, 0.84f, 1.0f, 0.7f);
+                    renderBackend->drawRect(selX, line.y - fontSize, charWidth, lineHeight, 0.68f, 0.84f, 1.0f, 0.7f);
                 }
             }
         }
@@ -1434,7 +1404,7 @@ void Engine::renderRawText(int width, int height) {
         for (const auto& rc : line.chars) {
             if (monoFace) {
                 char str[2] = {rc.c, '\0'};
-                uiRenderer->drawText(str, lx, line.y, rc.r, rc.g, rc.b, 1.0f, fontSize, TextStyle::Normal, true, monoFace);
+                renderBackend->drawText(str, lx, line.y, rc.r, rc.g, rc.b, 1.0f, static_cast<int>(fontSize), TextStyle::Normal, true, monoFace);
             }
             lx += charWidth;
         }
@@ -1467,34 +1437,24 @@ void Engine::renderRawText(int width, int height) {
             cursorX = leftMargin + lastLine.chars.size() * charWidth;
             cursorY = lastLine.y;
         }
-        uiRenderer->drawRect(cursorX, cursorY - fontSize, 2.0f, lineHeight, 0.0f, 0.0f, 0.0f, 1.0f);
+        renderBackend->drawRect(cursorX, cursorY - fontSize, 2.0f, lineHeight, 0.0f, 0.0f, 0.0f, 1.0f);
     }
 
-    uiRenderer->flush();
+    renderBackend->flush();
 
     // Content height for scrolling
     contentHeight = (lines.size() + 1) * lineHeight + 40.0f;
 }
 
 void Engine::renderToolbar(int width) {
-    // Initialize UI renderer on first use
-    if (!uiRendererInitialized) {
-        uiAtlas = std::make_unique<GlyphAtlas>(512, 512);
-        uiRenderer = std::make_unique<BatchRenderer>();
-        uiAtlas->init();
-        uiRenderer->init();
-        uiRenderer->setAtlas(uiAtlas.get());
-        uiRendererInitialized = true;
-    }
-
-    uiRenderer->setViewport(width, viewportHeight > 0 ? viewportHeight : 600);
-    uiRenderer->begin();
+    // Use render backend for all drawing (no scroll offset for fixed toolbar)
+    renderBackend->setScrollOffset(0);
 
     // Draw toolbar background (light gray)
-    uiRenderer->drawRect(0, 0, width, TOOLBAR_HEIGHT, 0.95f, 0.95f, 0.95f, 1.0f);
+    renderBackend->drawRect(0, 0, width, TOOLBAR_HEIGHT, 0.95f, 0.95f, 0.95f, 1.0f);
 
     // Draw bottom border
-    uiRenderer->drawRect(0, TOOLBAR_HEIGHT - 1, width, 1, 0.8f, 0.8f, 0.8f, 1.0f);
+    renderBackend->drawRect(0, TOOLBAR_HEIGHT - 1, width, 1, 0.8f, 0.8f, 0.8f, 1.0f);
 
     // Button definitions
     struct Button {
@@ -1529,26 +1489,25 @@ void Engine::renderToolbar(int width) {
         Button& btn = buttons[i];
 
         // Button background (white)
-        uiRenderer->drawRect(btn.x, buttonY, btn.w, buttonHeight, 1.0f, 1.0f, 1.0f, 1.0f);
+        renderBackend->drawRect(btn.x, buttonY, btn.w, buttonHeight, 1.0f, 1.0f, 1.0f, 1.0f);
 
         // Button border (draw as 4 thin rects)
         float bw = 1.0f;  // border width
-        uiRenderer->drawRect(btn.x, buttonY, btn.w, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // top
-        uiRenderer->drawRect(btn.x, buttonY + buttonHeight - bw, btn.w, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // bottom
-        uiRenderer->drawRect(btn.x, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // left
-        uiRenderer->drawRect(btn.x + btn.w - bw, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // right
+        renderBackend->drawRect(btn.x, buttonY, btn.w, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // top
+        renderBackend->drawRect(btn.x, buttonY + buttonHeight - bw, btn.w, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // bottom
+        renderBackend->drawRect(btn.x, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // left
+        renderBackend->drawRect(btn.x + btn.w - bw, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // right
 
-        // Draw label text
+        // Draw label text - use fontProvider for width calculation
         float textWidth = 0;
         for (const char* p = btn.label; *p; p++) {
-            const AtlasGlyph* g = uiAtlas->get(*p, 16, TextStyle::Normal, false, face);
-            if (g) textWidth += g->advance;
+            textWidth += fontProvider->getGlyphAdvance(*p, 16, false);
         }
 
         float textX = btn.x + (btn.w - textWidth) / 2.0f;
         float textY = buttonY + buttonHeight / 2.0f + 6.0f;
 
-        uiRenderer->drawText(btn.label, textX, textY, 0.2f, 0.2f, 0.2f, 1.0f, 16, TextStyle::Normal, false, face);
+        renderBackend->drawText(btn.label, textX, textY, 0.2f, 0.2f, 0.2f, 1.0f, 16, TextStyle::Normal, false, face);
     }
 
     // Draw "Raw" toggle button on the right side
@@ -1557,30 +1516,29 @@ void Engine::renderToolbar(int width) {
 
     // Button background - highlighted if showRaw is active
     if (showRaw) {
-        uiRenderer->drawRect(rawBtnX, buttonY, rawBtnWidth, buttonHeight, 0.85f, 0.9f, 1.0f, 1.0f);
+        renderBackend->drawRect(rawBtnX, buttonY, rawBtnWidth, buttonHeight, 0.85f, 0.9f, 1.0f, 1.0f);
     } else {
-        uiRenderer->drawRect(rawBtnX, buttonY, rawBtnWidth, buttonHeight, 1.0f, 1.0f, 1.0f, 1.0f);
+        renderBackend->drawRect(rawBtnX, buttonY, rawBtnWidth, buttonHeight, 1.0f, 1.0f, 1.0f, 1.0f);
     }
 
     // Button border
     float bw = 1.0f;
-    uiRenderer->drawRect(rawBtnX, buttonY, rawBtnWidth, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // top
-    uiRenderer->drawRect(rawBtnX, buttonY + buttonHeight - bw, rawBtnWidth, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // bottom
-    uiRenderer->drawRect(rawBtnX, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // left
-    uiRenderer->drawRect(rawBtnX + rawBtnWidth - bw, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // right
+    renderBackend->drawRect(rawBtnX, buttonY, rawBtnWidth, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // top
+    renderBackend->drawRect(rawBtnX, buttonY + buttonHeight - bw, rawBtnWidth, bw, 0.7f, 0.7f, 0.7f, 1.0f);  // bottom
+    renderBackend->drawRect(rawBtnX, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // left
+    renderBackend->drawRect(rawBtnX + rawBtnWidth - bw, buttonY, bw, buttonHeight, 0.7f, 0.7f, 0.7f, 1.0f);  // right
 
     // Draw "Raw" label
     const char* rawLabel = "Raw";
     float rawTextWidth = 0;
     for (const char* p = rawLabel; *p; p++) {
-        const AtlasGlyph* g = uiAtlas->get(*p, 16, TextStyle::Normal, false, face);
-        if (g) rawTextWidth += g->advance;
+        rawTextWidth += fontProvider->getGlyphAdvance(*p, 16, false);
     }
     float rawTextX = rawBtnX + (rawBtnWidth - rawTextWidth) / 2.0f;
     float rawTextY = buttonY + buttonHeight / 2.0f + 6.0f;
-    uiRenderer->drawText(rawLabel, rawTextX, rawTextY, 0.2f, 0.2f, 0.2f, 1.0f, 16, TextStyle::Normal, false, face);
+    renderBackend->drawText(rawLabel, rawTextX, rawTextY, 0.2f, 0.2f, 0.2f, 1.0f, 16, TextStyle::Normal, false, face);
 
-    uiRenderer->flush();
+    renderBackend->flush();
 }
 
 bool Engine::handleToolbarClick(double x, double y) {

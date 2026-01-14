@@ -1,7 +1,6 @@
 #pragma once
 #include "paint_operations.h"
-#include "glyph_atlas.h"
-#include "batch_renderer.h"
+#include "render_backend.h"
 #include <map>
 #include <vector>
 #include <memory>
@@ -10,10 +9,21 @@
 #include FT_FREETYPE_H
 #include <jpeglib.h>
 
+// Rasterizer is a dispatcher that walks paint operations and calls RenderBackend methods.
+// It no longer makes any direct GL calls - all rendering goes through the backend.
+// The Rasterizer still owns:
+// - FreeType font system (font faces are passed to backend for text rendering)
+// - Image loading and caching (textures are created via backend)
+//
+// Spec reference: specs/04-rasterization.md - "The Rasterizer becomes a dispatcher"
+
 class Rasterizer {
 public:
     Rasterizer();
     ~Rasterizer();
+
+    // Set the render backend (must be called before rasterize)
+    void setBackend(RenderBackend* backend);
 
     void rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY = 0.0f, bool caretVisible = true);
     bool initializeFont();
@@ -55,8 +65,6 @@ private:
     bool loadMonoFont();
     FT_Face getFaceForStyle(TextStyle style, bool monospace);
 
-    // GL2 renderer
-    std::unique_ptr<GlyphAtlas> atlas;
-    std::unique_ptr<BatchRenderer> batchRenderer;
-    bool gl2Initialized;
+    // Render backend (owned externally)
+    RenderBackend* backend;
 };

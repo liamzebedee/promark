@@ -37,16 +37,29 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/engine.h:52`, `src/engine/engine.cpp`
 
 ### P0-3: Create RenderBackend Abstraction
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: XL
 - **Dependencies**: None
-- **Problem**: GL calls split across 4 components:
-  - Rasterizer: `rasterizer.cpp:151-159, 190-196` (scissor, texture creation)
-  - GlyphAtlas: `glyph_atlas.cpp:12, 19-32, 38, 104-107` (texture management)
-  - BatchRenderer: `batch_renderer.cpp` (shaders, VBO, drawing)
-  - Engine: `engine.cpp:46-50, 135-136, 142-143, 184` (blend, clear, scissor)
+- **Solution**: Created unified RenderBackend architecture:
+  - Created `RenderBackend` abstract interface in `render_backend.h` with:
+    - Frame lifecycle: `init()`, `beginFrame()`, `endFrame()`
+    - Viewport/clear: `setViewport()`, `clear()`
+    - Clipping: `pushClip()`, `popClip()`
+    - Drawing: `drawRect()`, `drawLine()`, `drawText()`, `drawImage()`
+    - Textures: `createTexture()`, `deleteTexture()`
+    - Batching: `setScrollOffset()`, `flush()`
+  - Created `OpenGLBackend` implementation absorbing all GL calls from:
+    - GlyphAtlas (glyph texture management)
+    - BatchRenderer (shaders, VBO, drawing)
+    - Engine (viewport, clear, scissor, blend)
+    - Rasterizer (image texture creation)
+  - Updated `Rasterizer` to use `RenderBackend*` interface
+  - Updated `MarkdownRenderer` with `setBackend()` method
+  - Updated `Engine` to create/own `OpenGLBackend` and pass to subsystems
+  - Removed `glyph_atlas.cpp` and `batch_renderer.cpp` from build (absorbed into backend)
+  - All 12 tests pass
 - **Spec Reference**: `specs/04-rasterization.md` - "Single GL Authority Rule"
-- **Files**: `src/engine/rasterizer.cpp`, `src/engine/glyph_atlas.cpp`, `src/engine/batch_renderer.cpp`, `src/engine/engine.cpp`
+- **Files**: `src/engine/render_backend.h`, `src/engine/opengl_backend.h`, `src/engine/opengl_backend.cpp`, `src/engine/rasterizer.h`, `src/engine/rasterizer.cpp`, `src/engine/markdown_renderer.h`, `src/engine/markdown_renderer.cpp`, `src/engine/engine.h`, `src/engine/engine.cpp`, `sources.mk`
 
 ### P0-4: Unify Layout Authority
 - **Status**: COMPLETED
@@ -352,7 +365,7 @@ P0-1 (TextModel) ─────┬──> P0-2 (Remove inputBuffer)
                       ├──> P2-10 (Remove diskContent)
                       └──> P3-6 (Remove domToRaw/rawToDOM)
 
-P0-3 (RenderBackend) ─┬──> P1-2 (PaintTree hierarchy)
+P0-3 (RenderBackend) ─┬──> P1-2 (PaintTree hierarchy) [P0-3 COMPLETE]
                       └──> P1-8 (Viewport culling)
 
 P0-4 (Unify layout) ──┬──> P2-4 (layoutInlineFlow)
@@ -376,7 +389,7 @@ P1-3 (FontProvider) ──> P1-6 (Pre-shaped glyph data) [P1-3 COMPLETE]
 These groups can be worked on concurrently:
 
 **Group A - Rendering Foundation:**
-- P0-3, ~~P1-1~~, ~~P1-7~~ (P1-1 and P1-7 complete)
+- ~~P0-3~~, ~~P1-1~~, ~~P1-7~~ (all complete)
 
 **Group B - Text Model Foundation:**
 - ~~P0-1~~ → ~~P0-2~~ (both complete)
@@ -396,19 +409,18 @@ These groups can be worked on concurrently:
 
 | File | Primary Issues |
 |------|----------------|
-| `engine.h/cpp` | God class, inputBuffer, undo, GL calls, keyboard handling |
+| `engine.h/cpp` | God class, keyboard handling (GL calls moved to backend) |
 | `markdown_objects.h` | Unused Bold/Italic/Underline enums, annotation model |
 | `markdown_parser.cpp` | 6 stub methods, annotation model for inline formatting |
-| `layout_objects.cpp` | Split authority (4 objects self-position), I/O during layout |
+| `layout_objects.cpp` | I/O during layout (split authority resolved) |
 | `layout_engine.cpp` | stub layoutInlineFlow() |
 | `paint_operations.h` | Flat DisplayList (unified DrawRect with RectRole complete) |
 | `painter.cpp` | Queries upstream for MarkdownObjectType |
-| `rasterizer.cpp` | Direct GL calls, no culling |
-| `glyph_atlas.cpp` | Standalone with GL calls (should be in backend) |
-| `batch_renderer.cpp` | Partial backend, missing clip/resource management |
+| `rasterizer.cpp` | No culling (GL calls moved to backend) |
+| `opengl_backend.cpp` | Single GL authority - all rendering goes through here |
 | `text_buffer.h/cpp` | Never-called insert/delete, no snapshots/versioning |
 | `edit.cpp` | - |
 
 ---
 
-*Last updated: 2026-01-14 - P1-3 (FontProvider Abstraction) completed - removes FT_Face from layout layer public APIs*
+*Last updated: 2026-01-14 - P0-3 (RenderBackend Abstraction) completed - single GL authority for all rendering*

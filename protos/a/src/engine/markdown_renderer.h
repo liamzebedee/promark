@@ -4,6 +4,7 @@
 #include "layout_engine.h"
 #include "painter.h"
 #include "rasterizer.h"
+#include "render_backend.h"
 #include "font_provider.h"
 #include <memory>
 #include <cstdint>
@@ -35,6 +36,7 @@ public:
 
     void setCaretState(const CaretState& state);
     void setFontProvider(const FontProvider* provider);
+    void setBackend(RenderBackend* backend);  // Set render backend for rasterization
     void render(const Size& viewportSize, float scrollOffsetY = 0.0f);
 
     // Manual pipeline control for debugging/testing

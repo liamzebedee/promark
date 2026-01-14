@@ -6,8 +6,7 @@
 #include <vector>
 #include "markdown_renderer.h"
 #include "clipboard.h"
-#include "batch_renderer.h"
-#include "glyph_atlas.h"
+#include "opengl_backend.h"
 #include "freetype_font_provider.h"
 
 // Operation-based undo/redo system
@@ -129,10 +128,9 @@ private:
     void renderToolbar(int width);
     bool handleToolbarClick(double x, double y);
 
-    // GL2 batch renderer for UI
-    std::unique_ptr<BatchRenderer> uiRenderer;
-    std::unique_ptr<GlyphAtlas> uiAtlas;
-    bool uiRendererInitialized;
+    // Render backend - single authority for all GL calls
+    // This backend is shared with MarkdownRenderer's Rasterizer
+    std::unique_ptr<OpenGLBackend> renderBackend;
     void applyBold();
     void applyItalic();
     void applyHeading(int level);

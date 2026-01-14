@@ -53,6 +53,10 @@ void MarkdownRenderer::setFontProvider(const FontProvider* provider) {
     needsRepaint = true;
 }
 
+void MarkdownRenderer::setBackend(RenderBackend* backend) {
+    rasterizer->setBackend(backend);
+}
+
 void MarkdownRenderer::render(const Size& viewportSize, float scrollOffsetY) {
     // Check if text has changed using version tracking
     if (textBuffer && textBuffer->getVersion() != lastTextVersion) {
