@@ -85,7 +85,8 @@ TEST_SOURCES = $(TEST_DIR)/run_tests.cpp \
                $(TEST_DIR)/test_scroll_caret_bug.cpp \
                $(TEST_DIR)/test_scrollbar.cpp \
                $(TEST_DIR)/test_click_edit_blocks.cpp \
-               $(TEST_DIR)/test_long_document_navigation.cpp
+               $(TEST_DIR)/test_long_document_navigation.cpp \
+               $(TEST_DIR)/test_blockquote_caret.cpp
 
 # Test objects (engine objects + test-specific objects)
 ENGINE_OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(ENGINE_SRC))

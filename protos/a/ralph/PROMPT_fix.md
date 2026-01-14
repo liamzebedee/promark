@@ -62,3 +62,5 @@ Do NOT declare victory based on a single passing test. Play around. Verify the f
 - Trace the code path from scratch
 - Question your assumptions about what's happening
 - Consider if you're fixing the wrong layer entirely
+
+**EXIT CONDITION**: Exit the loop when all bugs in `specs/bug-*.md` have been fixed and moved to `specs/resolved/`.

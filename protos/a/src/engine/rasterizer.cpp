@@ -96,27 +96,58 @@ void Rasterizer::rasterizeArtifact(const PaintArtifact* artifact, const Rect& vi
                           artifact->clipRect.size.width, artifact->clipRect.size.height);
     }
 
-    // Draw this artifact's display items
+    // Draw display items in correct z-order:
+    // 1. First pass: Non-selection, non-caret items from this artifact
     for (const auto& op : artifact->displayItems) {
-        switch (op->getType()) {
-            case PaintOpType::DrawRect:
-                executeDrawRect(static_cast<const DrawRectOp&>(*op), caretVisible);
-                break;
-            case PaintOpType::DrawText:
-                executeDrawText(static_cast<const DrawTextOp&>(*op));
-                break;
-            case PaintOpType::DrawImage:
-                executeDrawImage(static_cast<const DrawImageOp&>(*op));
-                break;
-            case PaintOpType::DrawLine:
-                executeDrawLine(static_cast<const DrawLineOp&>(*op));
-                break;
+        bool isSelection = false;
+        bool isCaret = false;
+        if (op->getType() == PaintOpType::DrawRect) {
+            const auto& rectOp = static_cast<const DrawRectOp&>(*op);
+            isSelection = (rectOp.getRole() == RectRole::Selection);
+            isCaret = (rectOp.getRole() == RectRole::Caret);
+        }
+
+        if (!isSelection && !isCaret) {
+            switch (op->getType()) {
+                case PaintOpType::DrawRect:
+                    executeDrawRect(static_cast<const DrawRectOp&>(*op), caretVisible);
+                    break;
+                case PaintOpType::DrawText:
+                    executeDrawText(static_cast<const DrawTextOp&>(*op));
+                    break;
+                case PaintOpType::DrawImage:
+                    executeDrawImage(static_cast<const DrawImageOp&>(*op));
+                    break;
+                case PaintOpType::DrawLine:
+                    executeDrawLine(static_cast<const DrawLineOp&>(*op));
+                    break;
+            }
         }
     }
 
-    // Recursively process children
+    // 2. Recursively process children (content including backgrounds)
     for (const auto& child : artifact->children) {
         rasterizeArtifact(child.get(), viewport, caretVisible);
+    }
+
+    // 3. Selection (after backgrounds but on top of text - for visibility)
+    for (const auto& op : artifact->displayItems) {
+        if (op->getType() == PaintOpType::DrawRect) {
+            const auto& rectOp = static_cast<const DrawRectOp&>(*op);
+            if (rectOp.getRole() == RectRole::Selection) {
+                executeDrawRect(rectOp, caretVisible);
+            }
+        }
+    }
+
+    // 4. Caret (on top of everything)
+    for (const auto& op : artifact->displayItems) {
+        if (op->getType() == PaintOpType::DrawRect) {
+            const auto& rectOp = static_cast<const DrawRectOp&>(*op);
+            if (rectOp.getRole() == RectRole::Caret) {
+                executeDrawRect(rectOp, caretVisible);
+            }
+        }
     }
 
     // Restore clip if we pushed one
