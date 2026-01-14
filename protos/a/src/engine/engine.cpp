@@ -783,22 +783,61 @@ int Engine::findPositionInLine(int lineStart, int column) {
 
 void Engine::moveCursorVertically(int direction, bool extendSelection) {
     int inputLength = static_cast<int>(textBuffer->getLength());
-    int currentLineStart = findLineStart(cursorPos);
     int newPos = cursorPos;
 
-    if (direction < 0) {
-        // Move up
-        if (currentLineStart > 0) {
-            int prevLineEnd = currentLineStart - 1;
-            int prevLineStart = findLineStart(prevLineEnd);
-            newPos = findPositionInLine(prevLineStart, goalColumn);
+    // Use visual line navigation in markdown mode (not raw mode)
+    if (!showRaw && markdownRenderer) {
+        // Ensure layout is valid
+        Size viewportSize(viewportWidth, viewportHeight);
+        markdownRenderer->ensureLayoutValid(viewportSize);
+
+        // Get current cursor's visual position
+        int domPos = markdownRenderer->rawToDOM(cursorPos);
+        float cursorX, cursorY;
+        markdownRenderer->getCursorXY(domPos, cursorX, cursorY);
+
+        // Use current cursor X for hit testing (preserves horizontal position during vertical nav)
+        float targetX = cursorX;
+
+        // Calculate line height using the base font size (16px)
+        // Line height = font size * LINE_HEIGHT_RATIO (which is 1.0)
+        float lineHeight = Typography::BASE_FONT_SIZE;
+
+        // Calculate target Y position on adjacent visual line
+        // getCursorXY returns yOffset which is the top of the current line
+        // hitTest expects Y in the middle of a line (it uses a 0.2*fontSize offset)
+        // To reliably hit the adjacent line, add 0.5*lineHeight to aim at the center
+        float targetY = cursorY + (direction * lineHeight) + (lineHeight * 0.5f);
+
+        // Use hit testing to find position at target coordinates
+        // hitTest returns raw position
+        int hitPos = markdownRenderer->hitTest(targetX, targetY);
+
+        // Only use hitPos if it actually moved us (avoid staying in place)
+        if (hitPos != cursorPos) {
+            newPos = hitPos;
+        } else {
+            // If hit test didn't move us, we're at a document boundary
+            // newPos stays as cursorPos
         }
     } else {
-        // Move down
-        int currentLineEnd = findLineEnd(cursorPos);
-        if (currentLineEnd < inputLength) {
-            int nextLineStart = currentLineEnd + 1;
-            newPos = findPositionInLine(nextLineStart, goalColumn);
+        // Raw mode: use logical line navigation (original behavior)
+        int currentLineStart = findLineStart(cursorPos);
+
+        if (direction < 0) {
+            // Move up
+            if (currentLineStart > 0) {
+                int prevLineEnd = currentLineStart - 1;
+                int prevLineStart = findLineStart(prevLineEnd);
+                newPos = findPositionInLine(prevLineStart, goalColumn);
+            }
+        } else {
+            // Move down
+            int currentLineEnd = findLineEnd(cursorPos);
+            if (currentLineEnd < inputLength) {
+                int nextLineStart = currentLineEnd + 1;
+                newPos = findPositionInLine(nextLineStart, goalColumn);
+            }
         }
     }
 
