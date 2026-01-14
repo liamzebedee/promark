@@ -115,3 +115,30 @@ float DrawLineOp::getThickness() const {
 const Color& DrawLineOp::getColor() const {
     return color;
 }
+
+// PaintArtifact implementation
+
+PaintArtifact::PaintArtifact()
+    : bounds(0, 0, 0, 0), hasClip(false), clipRect(0, 0, 0, 0) {
+}
+
+PaintArtifact::PaintArtifact(const Rect& bounds)
+    : bounds(bounds), hasClip(false), clipRect(0, 0, 0, 0) {
+}
+
+void PaintArtifact::addChild(std::unique_ptr<PaintArtifact> child) {
+    children.push_back(std::move(child));
+}
+
+void PaintArtifact::addDisplayItem(std::unique_ptr<PaintOp> item) {
+    displayItems.push_back(std::move(item));
+}
+
+void PaintArtifact::setClip(const Rect& clip) {
+    hasClip = true;
+    clipRect = clip;
+}
+
+void PaintArtifact::clearClip() {
+    hasClip = false;
+}

@@ -43,7 +43,7 @@ void Rasterizer::setBackend(RenderBackend* b) {
     backend = b;
 }
 
-void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY, bool caretVisible) {
+void Rasterizer::rasterize(const PaintTree& paintTree, const Rect& viewport, float scrollOffsetY, bool caretVisible) {
     if (!backend) {
         std::cerr << "Rasterizer::rasterize called without backend set!" << std::endl;
         return;
@@ -51,7 +51,16 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport,
 
     backend->setScrollOffset(scrollOffsetY);
 
-    // Execute all paint operations
+    // Traverse the paint tree recursively with viewport culling
+    if (paintTree) {
+        rasterizeArtifact(paintTree.get(), viewport, caretVisible);
+    }
+
+    backend->flush();
+}
+
+void Rasterizer::rasterizeDisplayList(const DisplayList& displayList, bool caretVisible) {
+    // Legacy method for flat DisplayList - no culling
     for (const auto& op : displayList) {
         switch (op->getType()) {
             case PaintOpType::DrawRect:
@@ -68,8 +77,75 @@ void Rasterizer::rasterize(const DisplayList& displayList, const Rect& viewport,
                 break;
         }
     }
+}
 
-    backend->flush();
+void Rasterizer::rasterizeArtifact(const PaintArtifact* artifact, const Rect& viewport, bool caretVisible) {
+    if (!artifact) return;
+
+    // Viewport culling: skip entire subtree if bounds don't intersect viewport
+    // Note: artifacts with zero-size bounds (like root) always pass this check
+    if (artifact->bounds.size.width > 0 && artifact->bounds.size.height > 0) {
+        if (!boundsIntersectViewport(artifact->bounds, viewport)) {
+            return;  // Skip this artifact and all its children
+        }
+    }
+
+    // Apply clip if present
+    if (artifact->hasClip) {
+        backend->pushClip(artifact->clipRect.position.x, artifact->clipRect.position.y,
+                          artifact->clipRect.size.width, artifact->clipRect.size.height);
+    }
+
+    // Draw this artifact's display items
+    for (const auto& op : artifact->displayItems) {
+        switch (op->getType()) {
+            case PaintOpType::DrawRect:
+                executeDrawRect(static_cast<const DrawRectOp&>(*op), caretVisible);
+                break;
+            case PaintOpType::DrawText:
+                executeDrawText(static_cast<const DrawTextOp&>(*op));
+                break;
+            case PaintOpType::DrawImage:
+                executeDrawImage(static_cast<const DrawImageOp&>(*op));
+                break;
+            case PaintOpType::DrawLine:
+                executeDrawLine(static_cast<const DrawLineOp&>(*op));
+                break;
+        }
+    }
+
+    // Recursively process children
+    for (const auto& child : artifact->children) {
+        rasterizeArtifact(child.get(), viewport, caretVisible);
+    }
+
+    // Restore clip if we pushed one
+    if (artifact->hasClip) {
+        backend->popClip();
+    }
+}
+
+bool Rasterizer::boundsIntersectViewport(const Rect& bounds, const Rect& viewport) const {
+    // Check if two axis-aligned rectangles intersect.
+    // For scroll offset: viewport y is in screen coords, bounds y is in document coords.
+    // The backend's scroll offset is already set, so we compare in document space.
+    // Viewport in document space: y range is [scrollOffset, scrollOffset + viewport.height]
+
+    float viewTop = viewport.position.y;  // This is actually the scroll offset in most cases
+    float viewBottom = viewTop + viewport.size.height;
+    float viewLeft = viewport.position.x;
+    float viewRight = viewLeft + viewport.size.width;
+
+    float boundsTop = bounds.position.y;
+    float boundsBottom = boundsTop + bounds.size.height;
+    float boundsLeft = bounds.position.x;
+    float boundsRight = boundsLeft + bounds.size.width;
+
+    // Rectangles intersect if they overlap on both axes
+    bool xOverlap = boundsLeft < viewRight && boundsRight > viewLeft;
+    bool yOverlap = boundsTop < viewBottom && boundsBottom > viewTop;
+
+    return xOverlap && yOverlap;
 }
 
 void Rasterizer::executeDrawRect(const DrawRectOp& op, bool caretVisible) {

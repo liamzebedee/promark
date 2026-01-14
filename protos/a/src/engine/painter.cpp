@@ -11,61 +11,80 @@ Painter::Painter() {
 Painter::~Painter() {
 }
 
-DisplayList Painter::paint(const LayoutObject* layoutRoot, const CaretState* caret,
-                           const char* text, int textLength) {
-    DisplayList displayList;
+PaintTree Painter::paint(const LayoutObject* layoutRoot, const CaretState* caret,
+                         const char* text, int textLength) {
+    // Create root artifact that will contain selection, content tree, and caret
+    auto root = std::make_unique<PaintArtifact>();
 
-    // Paint selection first (behind text)
-    if (caret && caret->hasSelection && text) {
-        paintSelection(displayList, *caret, text, textLength, layoutRoot);
-    }
-
-    // Paint layout tree
     if (layoutRoot) {
-        paintLayoutObject(layoutRoot, displayList);
+        // Set root bounds to encompass the entire layout
+        root->bounds = layoutRoot->getRect();
+
+        // Paint selection first (behind text) - goes into root's display items
+        if (caret && caret->hasSelection && text) {
+            paintSelection(root->displayItems, *caret, text, textLength, layoutRoot);
+        }
+
+        // Paint layout tree as children - this builds the hierarchical structure
+        auto contentTree = paintLayoutObject(layoutRoot);
+        if (contentTree) {
+            root->addChild(std::move(contentTree));
+        }
+
+        // Paint caret last (on top) - goes into root's display items
+        if (caret && text) {
+            paintCaret(root->displayItems, *caret, text, textLength, layoutRoot);
+        }
     }
 
-    // Paint caret last (on top)
-    if (caret && text) {
-        paintCaret(displayList, *caret, text, textLength, layoutRoot);
-    }
-
-    return displayList;
+    return root;
 }
 
-void Painter::paintLayoutObject(const LayoutObject* layoutObject, DisplayList& displayList) {
-    paintBackground(layoutObject, displayList);
+std::unique_ptr<PaintArtifact> Painter::paintLayoutObject(const LayoutObject* layoutObject) {
+    // Create artifact with layout object's bounds for culling
+    auto artifact = std::make_unique<PaintArtifact>(layoutObject->getRect());
+
+    // Paint background
+    paintBackground(layoutObject, artifact->displayItems);
 
     // Draw blockquote gray bar
     if (layoutObject->getSourceObject()->getType() == MarkdownObjectType::BlockQuote) {
-        paintBlockQuoteBar(layoutObject, displayList);
+        paintBlockQuoteBar(layoutObject, artifact->displayItems);
     }
 
+    // Type-specific painting
     if (const TextLayoutObject* textObject = dynamic_cast<const TextLayoutObject*>(layoutObject)) {
-        paintText(textObject, displayList);
+        paintText(textObject, artifact->displayItems);
     } else if (const ImageLayoutObject* imageObject = dynamic_cast<const ImageLayoutObject*>(layoutObject)) {
-        paintImage(imageObject, displayList);
+        paintImage(imageObject, artifact->displayItems);
     } else if (const TableLayoutObject* tableObject = dynamic_cast<const TableLayoutObject*>(layoutObject)) {
-        paintTable(tableObject, displayList);
+        paintTable(tableObject, artifact->displayItems);
     } else if (const TableRowLayoutObject* rowObject = dynamic_cast<const TableRowLayoutObject*>(layoutObject)) {
-        paintTableRow(rowObject, displayList);
+        paintTableRow(rowObject, artifact->displayItems);
     } else if (const TableCellLayoutObject* cellObject = dynamic_cast<const TableCellLayoutObject*>(layoutObject)) {
-        paintTableCell(cellObject, displayList);
+        paintTableCell(cellObject, artifact->displayItems);
     } else if (const ListItemLayoutObject* listItemObject = dynamic_cast<const ListItemLayoutObject*>(layoutObject)) {
-        paintListItem(listItemObject, displayList);
+        paintListItem(listItemObject, artifact->displayItems);
     }
 
-    paintBorder(layoutObject, displayList);
+    // Paint borders
+    paintBorder(layoutObject, artifact->displayItems);
 
     // Debug borders when DEBUG=1
     const char* debugEnv = std::getenv("DEBUG");
     if (debugEnv && strcmp(debugEnv, "1") == 0) {
-        paintDebugBorder(layoutObject, displayList);
+        paintDebugBorder(layoutObject, artifact->displayItems);
     }
 
+    // Recursively create child artifacts
     for (const auto& child : layoutObject->getChildren()) {
-        paintLayoutObject(child.get(), displayList);
+        auto childArtifact = paintLayoutObject(child.get());
+        if (childArtifact) {
+            artifact->addChild(std::move(childArtifact));
+        }
     }
+
+    return artifact;
 }
 
 void Painter::paintText(const TextLayoutObject* textObject, DisplayList& displayList) {

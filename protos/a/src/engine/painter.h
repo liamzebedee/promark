@@ -19,11 +19,14 @@ public:
     Painter();
     ~Painter();
 
-    DisplayList paint(const LayoutObject* layoutRoot, const CaretState* caret = nullptr,
-                      const char* text = nullptr, int textLength = 0);
+    // Paint the layout tree and produce a hierarchical PaintTree.
+    // The PaintTree mirrors the layout tree structure for efficient culling.
+    PaintTree paint(const LayoutObject* layoutRoot, const CaretState* caret = nullptr,
+                    const char* text = nullptr, int textLength = 0);
 
 private:
-    void paintLayoutObject(const LayoutObject* layoutObject, DisplayList& displayList);
+    // Create a PaintArtifact for a layout object and its children recursively
+    std::unique_ptr<PaintArtifact> paintLayoutObject(const LayoutObject* layoutObject);
     void paintText(const TextLayoutObject* textObject, DisplayList& displayList);
     void paintImage(const ImageLayoutObject* imageObject, DisplayList& displayList);
     void paintBackground(const LayoutObject* layoutObject, DisplayList& displayList);

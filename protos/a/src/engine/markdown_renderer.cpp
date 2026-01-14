@@ -118,13 +118,15 @@ void MarkdownRenderer::paint() {
     const char* text = textBuffer ? textBuffer->getText().c_str() : nullptr;
     int textLen = textBuffer ? static_cast<int>(textBuffer->getText().length()) : 0;
 
-    displayList = painter->paint(layoutTree.get(), &caretState, text, textLen);
+    paintTree = painter->paint(layoutTree.get(), &caretState, text, textLen);
     needsRepaint = false;
 }
 
 void MarkdownRenderer::rasterize(const Size& viewportSize, float scrollOffsetY) {
-    Rect viewport(0, 0, viewportSize.width, viewportSize.height);
-    rasterizer->rasterize(displayList, viewport, scrollOffsetY, caretState.caretVisible);
+    // Viewport for culling is in document space, with y = scrollOffset
+    // This allows the rasterizer to cull artifacts that are above or below the visible area
+    Rect viewport(0, scrollOffsetY, viewportSize.width, viewportSize.height);
+    rasterizer->rasterize(paintTree, viewport, scrollOffsetY, caretState.caretVisible);
 }
 
 const MarkdownObject* MarkdownRenderer::getObjectTree() const {
@@ -135,8 +137,8 @@ const LayoutObject* MarkdownRenderer::getLayoutTree() const {
     return layoutTree.get();
 }
 
-const DisplayList& MarkdownRenderer::getDisplayList() const {
-    return displayList;
+const PaintTree& MarkdownRenderer::getPaintTree() const {
+    return paintTree;
 }
 
 float MarkdownRenderer::getContentHeight() const {

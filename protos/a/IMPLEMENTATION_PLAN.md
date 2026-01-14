@@ -119,13 +119,32 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/painter.cpp`, `src/engine/rasterizer.h`, `src/engine/rasterizer.cpp`
 
 ### P1-2: Convert Flat DisplayList to Hierarchical PaintTree
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: P0-3
-- **Problem**: `DisplayList` is `std::vector<unique_ptr<PaintOp>>` (`paint_operations.h:155`)
-- **Required**: Tree of PaintArtifacts with bounds, clipRect, children for culling
+- **Solution**: Implemented hierarchical PaintTree structure for efficient viewport culling:
+  - Created `PaintArtifact` class in `paint_operations.h` with:
+    - `displayItems`: Drawing commands for this node
+    - `bounds`: Bounding box for viewport culling
+    - `clipRect`: Optional structural clip region (not push/pop)
+    - `children`: Child artifacts (owned via unique_ptr)
+  - Added `PaintTree` type alias (`std::unique_ptr<PaintArtifact>`)
+  - Updated `Painter::paint()` to return `PaintTree` instead of `DisplayList`
+  - Updated `Painter::paintLayoutObject()` to create hierarchical artifacts mirroring layout tree
+  - Updated `Rasterizer::rasterize()` to accept `PaintTree` with viewport culling:
+    - `rasterizeArtifact()` recursively traverses tree
+    - `boundsIntersectViewport()` enables subtree culling
+    - Entire subtrees outside viewport are skipped
+  - Added `rasterizeDisplayList()` for legacy compatibility
+  - Updated `MarkdownRenderer` to use `PaintTree` (renamed `displayList` to `paintTree`)
+  - All 12 tests pass
+- **Benefits**:
+  - Culling: Skip entire subtrees outside viewport
+  - Clipping: Structural property, not stateful push/pop
+  - Caching: Unchanged subtrees can be reused (future)
+  - Debugging: Paint tree mirrors layout tree structure
 - **Spec Reference**: `specs/03-rendering-pipeline.md`
-- **Files**: `src/engine/paint_operations.h`, `src/engine/painter.cpp`
+- **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/painter.h`, `src/engine/painter.cpp`, `src/engine/rasterizer.h`, `src/engine/rasterizer.cpp`, `src/engine/markdown_renderer.h`, `src/engine/markdown_renderer.cpp`
 
 ### P1-3: Create FontProvider Abstraction
 - **Status**: COMPLETED
@@ -365,8 +384,8 @@ P0-1 (TextModel) ─────┬──> P0-2 (Remove inputBuffer)
                       ├──> P2-10 (Remove diskContent)
                       └──> P3-6 (Remove domToRaw/rawToDOM)
 
-P0-3 (RenderBackend) ─┬──> P1-2 (PaintTree hierarchy) [P0-3 COMPLETE]
-                      └──> P1-8 (Viewport culling)
+P0-3 (RenderBackend) ─┬──> P1-2 (PaintTree hierarchy) [BOTH COMPLETE]
+                      └──> P1-8 (Viewport culling) [Enabled by P1-2]
 
 P0-4 (Unify layout) ──┬──> P2-4 (layoutInlineFlow)
                       └──> P3-3 (Delete skipPropagate)
@@ -389,7 +408,7 @@ P1-3 (FontProvider) ──> P1-6 (Pre-shaped glyph data) [P1-3 COMPLETE]
 These groups can be worked on concurrently:
 
 **Group A - Rendering Foundation:**
-- ~~P0-3~~, ~~P1-1~~, ~~P1-7~~ (all complete)
+- ~~P0-3~~, ~~P1-1~~, ~~P1-2~~, ~~P1-7~~ (all complete)
 
 **Group B - Text Model Foundation:**
 - ~~P0-1~~ → ~~P0-2~~ (both complete)
@@ -414,13 +433,13 @@ These groups can be worked on concurrently:
 | `markdown_parser.cpp` | 6 stub methods, annotation model for inline formatting |
 | `layout_objects.cpp` | I/O during layout (split authority resolved) |
 | `layout_engine.cpp` | stub layoutInlineFlow() |
-| `paint_operations.h` | Flat DisplayList (unified DrawRect with RectRole complete) |
-| `painter.cpp` | Queries upstream for MarkdownObjectType |
-| `rasterizer.cpp` | No culling (GL calls moved to backend) |
+| `paint_operations.h` | PaintTree hierarchical (PaintArtifact with bounds, clipRect, children) |
+| `painter.cpp` | Produces hierarchical PaintTree (queries upstream for MarkdownObjectType) |
+| `rasterizer.cpp` | Viewport culling implemented (GL calls through backend) |
 | `opengl_backend.cpp` | Single GL authority - all rendering goes through here |
 | `text_buffer.h/cpp` | Never-called insert/delete, no snapshots/versioning |
 | `edit.cpp` | - |
 
 ---
 
-*Last updated: 2026-01-14 - P0-3 (RenderBackend Abstraction) completed - single GL authority for all rendering*
+*Last updated: 2026-01-14 - P1-2 (Hierarchical PaintTree) completed - viewport culling enabled*

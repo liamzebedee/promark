@@ -47,7 +47,7 @@ public:
 
     const MarkdownObject* getObjectTree() const;
     const LayoutObject* getLayoutTree() const;
-    const DisplayList& getDisplayList() const;
+    const PaintTree& getPaintTree() const;
     float getContentHeight() const;
 
     // DOM↔Raw position mapping
@@ -83,7 +83,7 @@ private:
 
     std::unique_ptr<MarkdownObject> objectTree;
     std::unique_ptr<LayoutObject> layoutTree;
-    DisplayList displayList;
+    PaintTree paintTree;  // Hierarchical paint artifact tree
 
     CaretState caretState;
 

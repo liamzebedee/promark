@@ -121,3 +121,46 @@ private:
 };
 
 using DisplayList = std::vector<std::unique_ptr<PaintOp>>;
+
+// PaintArtifact represents a node in the paint tree hierarchy.
+// It mirrors the layout tree structure to enable efficient culling and caching.
+//
+// Benefits of tree structure:
+// - Culling: Rasterizer can skip entire subtrees outside viewport
+// - Clipping: Clip regions are structural properties, not stateful push/pop
+// - Caching: Unchanged subtrees can be reused
+// - Debugging: Paint tree mirrors layout tree structure
+//
+// Per spec: specs/03-rendering-pipeline.md
+class PaintArtifact {
+public:
+    PaintArtifact();
+    explicit PaintArtifact(const Rect& bounds);
+
+    // Display items for this node (drawing commands)
+    DisplayList displayItems;
+
+    // Bounding box for culling - if bounds don't intersect viewport, skip entire subtree
+    Rect bounds;
+
+    // Optional clip region (structural, not push/pop commands)
+    bool hasClip;
+    Rect clipRect;
+
+    // Child artifacts (owned by this artifact)
+    std::vector<std::unique_ptr<PaintArtifact>> children;
+
+    // Add a child artifact
+    void addChild(std::unique_ptr<PaintArtifact> child);
+
+    // Add a display item to this artifact
+    void addDisplayItem(std::unique_ptr<PaintOp> item);
+
+    // Set clip region
+    void setClip(const Rect& clip);
+    void clearClip();
+};
+
+// PaintTree is the root of the hierarchical paint artifact tree.
+// The Painter produces this, and the Rasterizer consumes it.
+using PaintTree = std::unique_ptr<PaintArtifact>;

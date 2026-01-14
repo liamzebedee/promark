@@ -25,7 +25,12 @@ public:
     // Set the render backend (must be called before rasterize)
     void setBackend(RenderBackend* backend);
 
-    void rasterize(const DisplayList& displayList, const Rect& viewport, float scrollOffsetY = 0.0f, bool caretVisible = true);
+    // Rasterize a hierarchical PaintTree with viewport culling.
+    // Entire subtrees whose bounds don't intersect the viewport are skipped.
+    void rasterize(const PaintTree& paintTree, const Rect& viewport, float scrollOffsetY = 0.0f, bool caretVisible = true);
+
+    // Legacy method: rasterize a flat DisplayList (for backwards compatibility)
+    void rasterizeDisplayList(const DisplayList& displayList, bool caretVisible = true);
     bool initializeFont();
 
 private:
@@ -34,6 +39,12 @@ private:
         std::vector<uint8_t> pixels;
         uint32_t textureId;
     };
+
+    // Recursive traversal of PaintTree with viewport culling
+    void rasterizeArtifact(const PaintArtifact* artifact, const Rect& viewport, bool caretVisible);
+
+    // Check if two rectangles intersect (for viewport culling)
+    bool boundsIntersectViewport(const Rect& bounds, const Rect& viewport) const;
 
     void executeDrawRect(const DrawRectOp& op, bool caretVisible);
     void executeDrawText(const DrawTextOp& op);
