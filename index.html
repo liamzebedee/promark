@@ -3,38 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MD Editor</title>
+    <title>Promark</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Source+Serif+4:wght@400;600&display=swap');
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            background: #1a1a1a;
+            background: linear-gradient(180deg, #c0c0c0 0%, #e8e8e8 50%, #d0d0d0 100%);
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Source Serif 4', 'Times New Roman', Georgia, serif;
         }
         .container {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 16px;
+            gap: 12px;
         }
-        h1 { color: #fff; font-weight: 400; font-size: 24px; }
+        h1 {
+            font-family: 'Playfair Display', Georgia, serif;
+            color: #222;
+            font-weight: 500;
+            font-size: 28px;
+            letter-spacing: -0.5px;
+        }
+        .subtitle {
+            color: #555;
+            font-size: 14px;
+            font-style: italic;
+            margin-top: -8px;
+        }
+        .warning {
+            background: linear-gradient(180deg, #4a90d9 0%, #2968b0 100%);
+            color: #fff;
+            font-size: 11px;
+            padding: 4px 12px;
+            border-radius: 10px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
         #canvas {
-            border-radius: 8px;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+            border-radius: 6px;
+            box-shadow:
+                0 2px 8px rgba(0, 0, 0, 0.3),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.5),
+                0 0 0 1px rgba(0, 0, 0, 0.2);
             width: 900px;
             height: 700px;
         }
-        .status { color: #666; font-size: 14px; }
-        .status.loading { color: #f90; }
-        .status.ready { color: #4a4; }
+        .status {
+            color: #666;
+            font-size: 13px;
+        }
+        .status.loading {
+            color: #2968b0;
+        }
+        .status.ready {
+            color: #3a7340;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>MD Editor</h1>
+        <h1>Promark</h1>
+        <p class="subtitle">the professional markdown processor</p>
+        <span class="warning">indev, totally broken</span>
         <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
         <textarea id="clipboard-helper" style="position:absolute;left:-9999px;"></textarea>
         <div id="status" class="status loading">Loading...</div>
