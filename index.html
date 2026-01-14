@@ -121,10 +121,15 @@
         function resizeCanvas() {
             var dpr = window.devicePixelRatio || 1;
             var rect = canvas.getBoundingClientRect();
-            canvas.width = rect.width * dpr;
-            canvas.height = rect.height * dpr;
+            var w = Math.floor(rect.width * dpr);
+            var h = Math.floor(rect.height * dpr);
+            canvas.width = w;
+            canvas.height = h;
+            // Tell OpenGL about the new size
+            if (moduleReady && Module._resizeViewport) {
+                Module._resizeViewport(w, h);
+            }
         }
-        resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
 
         // GLFW key codes
@@ -156,6 +161,7 @@
                 document.getElementById('status').textContent = 'Ready';
                 document.getElementById('status').className = 'status ready';
                 canvas.focus();
+                resizeCanvas(); // Set initial size
                 console.log('Module ready, exports:', !!Module._handleKey, !!Module._insertText);
             }
         };
