@@ -89,18 +89,12 @@ These must be resolved first as they block correct implementation of other featu
 
 ## P2 - MEDIUM PRIORITY ENHANCEMENTS
 
-### P2-1: Implement Parser Stub Methods
-- **Status**: NOT STARTED
-- **Complexity**: M
+### P2-1: Delete Dead Parser Stub Methods
+- **Status**: COMPLETED
+- **Complexity**: S
 - **Dependencies**: None
-- **Problem**: 6 stub methods return null/false (`markdown_parser.cpp:677-705`):
-  - `parseBlock()` returns nullptr
-  - `parseInline()` returns nullptr
-  - `isHeading()` returns false
-  - `isBlockQuote()` returns false
-  - `isCodeBlock()` returns false
-  - `isList()` returns false
-- **Files**: `src/engine/markdown_parser.cpp`
+- **Solution**: Deleted 6 dead stub methods per specs/01-document-model.md "What Gets Deleted" section. These methods (parseBlock, parseInline, isHeading, isBlockQuote, isCodeBlock, isList) were declared but never called - all detection logic is implemented inline in parseDocument(). Removed from both header and implementation.
+- **Files**: `src/engine/markdown_parser.h`, `src/engine/markdown_parser.cpp`
 
 ### P2-2: Add Missing Node Types (ThematicBreak)
 - **Status**: COMPLETED
@@ -294,7 +288,7 @@ These groups can be worked on concurrently:
 |------|----------------|
 | `engine.h/cpp` | God class, keyboard handling (GL calls moved to backend) |
 | `markdown_objects.h` | Tree model implemented (Strong, Emphasis, etc.) |
-| `markdown_parser.cpp` | 6 stub methods, tree model with derived annotations for layout/paint |
+| `markdown_parser.cpp` | Tree model with derived annotations for layout/paint |
 | `layout_objects.cpp` | I/O during layout (split authority resolved) |
 | `layout_engine.cpp` | stub layoutInlineFlow() |
 | `paint_operations.h` | PaintTree hierarchical (PaintArtifact with bounds, clipRect, children) |
@@ -306,16 +300,4 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P2-2 marked COMPLETED (ThematicBreak node implementation)*
-
-## Change Summary (2026-01-14)
-
-**Dead Code Cleanup Completed:**
-- **P3-1**: Deleted InlineLayoutObject class - was unused dead code with empty layout() method
-- **P3-2**: Deleted LayoutFlow::Inline enum and layoutInlineFlow() stub method - explicit Text handling now calls TextLayoutObject directly
-- **P2-4**: Marked SUPERSEDED as layoutInlineFlow() no longer exists; work handled by direct Text handling in performLayout()
-
-**Documentation Cleanup:**
-- Removed detailed solution descriptions from completed P0 items (P0-1 through P0-5) to reduce file noise
-- Removed detailed solution descriptions from completed P1 items (P1-1 through P1-8) to improve readability
-- Kept brief status/complexity/dependency info for quick reference
+*Last updated: 2026-01-14 - P2-1 marked COMPLETED (deleted dead parser stub methods)*

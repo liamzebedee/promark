@@ -13,8 +13,6 @@ public:
     
 private:
     std::unique_ptr<MarkdownObject> parseDocument(const std::string& text);
-    std::unique_ptr<MarkdownObject> parseBlock(const std::string& text, size_t& position);
-    std::unique_ptr<MarkdownObject> parseInline(const std::string& text, size_t& position);
 
     // Legacy annotation-based parsing (to be removed after tree model is complete)
     std::string parseInlineElements(const std::string& line, int lineRawStart, MarkdownObject* parent);
@@ -30,9 +28,4 @@ private:
     bool isListItem(const std::string& line);
     bool isOrderedListItem(const std::string& line);
     size_t parseListMarker(const std::string& line, ListMarkerType& type, std::string& marker);
-
-    bool isHeading(const std::string& text, size_t position);
-    bool isBlockQuote(const std::string& text, size_t position);
-    bool isCodeBlock(const std::string& text, size_t position);
-    bool isList(const std::string& text, size_t position);
 };

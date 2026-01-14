@@ -996,36 +996,6 @@ continue_parsing:
     return document;
 }
 
-std::unique_ptr<MarkdownObject> MarkdownParser::parseBlock(const std::string& text, size_t& position) {
-    // TODO: Implement block parsing
-    return nullptr;
-}
-
-std::unique_ptr<MarkdownObject> MarkdownParser::parseInline(const std::string& text, size_t& position) {
-    // TODO: Implement inline parsing
-    return nullptr;
-}
-
-bool MarkdownParser::isHeading(const std::string& text, size_t position) {
-    // TODO: Implement heading detection
-    return false;
-}
-
-bool MarkdownParser::isBlockQuote(const std::string& text, size_t position) {
-    // TODO: Implement blockquote detection
-    return false;
-}
-
-bool MarkdownParser::isCodeBlock(const std::string& text, size_t position) {
-    // TODO: Implement code block detection
-    return false;
-}
-
-bool MarkdownParser::isList(const std::string& text, size_t position) {
-    // TODO: Implement list detection
-    return false;
-}
-
 bool MarkdownParser::isListItem(const std::string& line) {
     if (line.empty()) return false;
 
