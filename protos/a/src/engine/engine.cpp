@@ -812,6 +812,29 @@ void Engine::insertText(const std::string& text) {
     goalColumn = getColumnInLine(cursorPos);
 }
 
+void Engine::setCursorPosition(int pos) {
+    int inputLength = static_cast<int>(textBuffer->getLength());
+    cursorPos = std::max(0, std::min(pos, inputLength));
+    hasSelection = false;
+    goalColumn = getColumnInLine(cursorPos);
+
+    // Snap caret animation to new position
+    if (markdownRenderer) {
+        Size viewportSize(viewportWidth, viewportHeight);
+        markdownRenderer->ensureLayoutValid(viewportSize);
+        int domPos = markdownRenderer->rawToDOM(cursorPos);
+        float x, y;
+        markdownRenderer->getCursorXY(domPos, x, y);
+        caretAnimX = caretTargetX = x;
+        caretAnimY = caretTargetY = y;
+    }
+
+    // Reset blink timer
+    lastBlinkTime = glfwGetTime();
+    caretVisible = true;
+    ensureCursorVisible();
+}
+
 void Engine::deleteChar() {
     if (cursorPos > 0) {
         std::string deletedText(1, textBuffer->charAt(cursorPos - 1));
@@ -903,11 +926,30 @@ void Engine::moveCursorVertically(int direction, bool extendSelection) {
         // hitTest returns raw position
         int hitPos = markdownRenderer->hitTest(targetX, targetY);
 
-        // If initial hit test didn't move us, try with progressively larger steps
+        // Helper to check if a position is a good navigation target
+        // Must be on a different visual line AND have actual content (not just newlines)
+        auto isGoodTarget = [&](int pos) {
+            if (pos == cursorPos) return false;
+            int hitDomPos = markdownRenderer->rawToDOM(pos);
+            float hitX, hitY;
+            markdownRenderer->getCursorXY(hitDomPos, hitX, hitY);
+            // Must be on a different line (Y changed by at least half the font size)
+            if (std::abs(hitY - cursorY) <= (currentFontSize * 0.5f)) {
+                return false;
+            }
+            // Skip if we landed on a newline/empty line - not a useful target
+            if (pos < static_cast<int>(textBuffer->getLength()) && textBuffer->charAt(pos) == '\n') {
+                return false;
+            }
+            return true;
+        };
+
+        // If initial hit test didn't move us to a different line, try with progressively larger steps
         // This handles cases where there are gaps between elements (e.g., block spacing)
-        if (hitPos == cursorPos) {
+        // or where we landed on an empty line between blocks
+        if (!isGoodTarget(hitPos)) {
             // Try up to 5 additional steps with increasing distance
-            for (int attempt = 1; attempt <= 5 && hitPos == cursorPos; attempt++) {
+            for (int attempt = 1; attempt <= 5 && !isGoodTarget(hitPos); attempt++) {
                 float additionalStep = lineHeight * attempt;
                 float retryY = targetY + (direction * additionalStep);
                 hitPos = markdownRenderer->hitTest(targetX, retryY);

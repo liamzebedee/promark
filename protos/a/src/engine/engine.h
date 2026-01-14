@@ -53,6 +53,10 @@ public:
 
     // Cursor position (for testing)
     int getCursorPosition() const { return cursorPos; }
+    void setCursorPosition(int pos);
+
+    // Access to markdown renderer (for testing)
+    MarkdownRenderer* getMarkdownRenderer() const { return markdownRenderer.get(); }
 
 private:
     bool wantsToClose;
