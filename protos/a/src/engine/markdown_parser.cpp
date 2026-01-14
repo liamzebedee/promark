@@ -961,11 +961,21 @@ continue_parsing:
                 continue;
             }
 
-            // Not a valid table, treat as paragraph
+            // Not a valid table, treat as paragraph - use tree-based model
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
             paragraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
 
-            std::string displayText = parseInlineElements(line, static_cast<int>(lineStart), paragraph.get());
+            // Create inline children using tree-based model (supports nested formatting)
+            createInlineChildren(line, paragraph.get(), static_cast<int>(lineStart));
+
+            // For layout/painting compatibility: derive display text and annotations from tree
+            std::string displayText = collectDisplayText(paragraph.get());
+            int charPos = 0;
+            buildStyleRangesFromTree(paragraph.get(), charPos, paragraph.get(), false, false, false);
+
+            // Layout expects a single Text child, not a tree structure.
+            // Clear the tree children and add a single flattened Text child.
+            paragraph->clearChildren();
 
             auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
             textNode->setText(displayText);
@@ -975,11 +985,21 @@ continue_parsing:
 
             document->addChild(std::move(paragraph));
         } else {
-            // Regular paragraph - parse inline elements (links)
+            // Regular paragraph - use tree-based inline parsing for nested formatting
             auto paragraph = std::make_unique<MarkdownObject>(MarkdownObjectType::Paragraph);
             paragraph->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
 
-            std::string displayText = parseInlineElements(line, static_cast<int>(lineStart), paragraph.get());
+            // Create inline children using tree-based model (supports nested formatting)
+            createInlineChildren(line, paragraph.get(), static_cast<int>(lineStart));
+
+            // For layout/painting compatibility: derive display text and annotations from tree
+            std::string displayText = collectDisplayText(paragraph.get());
+            int charPos = 0;
+            buildStyleRangesFromTree(paragraph.get(), charPos, paragraph.get(), false, false, false);
+
+            // Layout expects a single Text child, not a tree structure.
+            // Clear the tree children and add a single flattened Text child.
+            paragraph->clearChildren();
 
             auto textNode = std::make_unique<MarkdownObject>(MarkdownObjectType::Text);
             textNode->setText(displayText);

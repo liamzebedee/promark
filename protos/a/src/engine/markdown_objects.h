@@ -41,22 +41,8 @@ struct InlineLinkRange {
     std::string url;
 };
 
-// Text style flags
-enum class TextStyle : uint8_t {
-    Normal = 0,
-    Bold = 1 << 0,
-    Italic = 1 << 1,
-    Code = 1 << 2,
-    BoldItalic = Bold | Italic
-};
-
-inline TextStyle operator|(TextStyle a, TextStyle b) {
-    return static_cast<TextStyle>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
-}
-
-inline bool hasStyle(TextStyle style, TextStyle flag) {
-    return (static_cast<uint8_t>(style) & static_cast<uint8_t>(flag)) != 0;
-}
+// Text style flags - shared definition in text_style.h
+#include "text_style.h"
 
 // Inline style range within text
 struct InlineStyleRange {
@@ -73,6 +59,7 @@ public:
     MarkdownObjectType getType() const;
     void addChild(std::unique_ptr<MarkdownObject> child);
     const std::vector<std::unique_ptr<MarkdownObject>>& getChildren() const;
+    void clearChildren() { children.clear(); }
 
     virtual std::string getText() const;
     virtual void setText(const std::string& text);

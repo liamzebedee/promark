@@ -92,7 +92,12 @@ TEST_SOURCES = $(TEST_DIR)/run_tests.cpp \
                $(TEST_DIR)/test_raw_mode_empty_lines.cpp \
                $(TEST_DIR)/test_typography.cpp \
                $(TEST_DIR)/test_formatting_visual.cpp \
-               $(TEST_DIR)/test_formatting_render.cpp
+               $(TEST_DIR)/test_formatting_render.cpp \
+               $(TEST_DIR)/test_e2e_comprehensive.cpp \
+               $(TEST_DIR)/test_formatting_spacing.cpp \
+               $(TEST_DIR)/test_parser_debug.cpp \
+               $(TEST_DIR)/test_visual_mode_empty_lines.cpp \
+               $(TEST_DIR)/test_link_in_bold_debug.cpp
 
 # Test objects (engine objects + test-specific objects)
 ENGINE_OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(ENGINE_SRC))

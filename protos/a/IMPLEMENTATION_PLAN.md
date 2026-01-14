@@ -2,6 +2,33 @@
 
 ## Resolved Issues
 
+### Punctuation Spacing Around Formatted Text (2026-01-14)
+
+**Issue:** Punctuation and spaces between formatted text segments were not rendering correctly. For example, "**bold text**, *italic text*" would show "bold textitalic text" without the comma and space.
+
+**Root Cause:** Layout engine used regular font metrics (`getGlyphAdvance`) but the rasterizer used style-specific font faces (bold, italic, bolditalic). Bold/italic fonts have different character widths than the regular font, causing a mismatch between calculated positions and rendered positions.
+
+**Solution:**
+1. Created `text_style.h` - Extracted `TextStyle` enum to shared header to avoid circular dependencies
+2. Added `getGlyphAdvanceStyled()` method to `FontProvider` interface - Returns glyph width for styled fonts
+3. Updated `FreeTypeFontProvider` to support all font faces (regular, bold, italic, bolditalic, mono)
+4. Modified `Engine` to load styled font files (NotoSans-Bold.ttf, NotoSans-Italic.ttf, NotoSans-BoldItalic.ttf)
+5. Updated `shapeText()` in layout_objects.cpp to use `getGlyphAdvanceStyled()` with per-character style mapping
+
+**Files Modified:**
+- `src/engine/text_style.h` (NEW) - Shared TextStyle enum definition
+- `src/engine/font_provider.h` - Added `getGlyphAdvanceStyled()` virtual method
+- `src/engine/freetype_font_provider.h/cpp` - Added styled font support and new constructor
+- `src/engine/markdown_objects.h` - Changed to include text_style.h
+- `src/engine/layout_objects.cpp` - Updated `shapeText()` to use styled metrics
+- `src/engine/engine.h/cpp` - Added faceBold, faceItalic, faceBoldItalic members and loading
+- `tests/test_formatting_spacing.cpp` (NEW) - Added visual tests for formatting spacing
+- `tests/test_parser_debug.cpp` (NEW) - Added debug tests for style range verification
+- `tests/test_e2e_comprehensive.cpp` (NEW) - Added comprehensive E2E formatting tests
+- `Makefile` - Added new test files
+
+**Result:** Character positions now match actual rendered positions regardless of font style, fixing spacing around formatted text.
+
 ### Keyboard Shortcuts (2026-01-14)
 
 **Issue:** Missing keyboard shortcuts for common operations (Ctrl+X, Ctrl+B, Ctrl+I, Ctrl+K, Ctrl+`)
@@ -139,3 +166,52 @@ Changed rasterizer to draw items in correct z-order:
 - `tests/test_bug_caret_after_typing.cpp` - Adjusted Y coordinate for line height change
 
 **Result:** Body text now has ~22.4px line height (16px * 1.4), making it more comfortable to read.
+
+### Empty Line Collapsing in Visual Mode (2026-01-14)
+
+**Issue:** Bug report claimed empty lines between paragraphs were rendered as visible blank lines in visual mode, doubling spacing compared to browser rendering.
+
+**Investigation Result:** Bug was already fixed by prior implementation.
+
+**Existing Solution (in layout_engine.cpp:170-202):**
+1. Detects empty paragraphs (children all have empty text)
+2. Sets their height to 0 (collapsed)
+3. Skips Y position advancement
+4. Does not add block spacing after collapsed elements
+
+**Verification:**
+- Single empty line between paragraphs: Gap = 30.4px (correct)
+- Multiple consecutive empty lines: Gap = 30.4px (all collapsed)
+- Expected formula: `16px * 1.4 (line height ratio) + 8px (block spacing) = 30.4px`
+- Visual screenshots confirm proper collapsing in visual mode vs visible empty lines in raw mode
+
+**Files Involved:**
+- `src/engine/layout_engine.cpp` - Empty paragraph collapsing logic
+- `tests/test_visual_mode_empty_lines.cpp` - Added measurement assertions
+
+**Result:** No changes required. Feature already working correctly. Added test assertions to verify behavior.
+
+### Nested Inline Formatting (2026-01-14)
+
+**Issue:** Links inside bold text (e.g., `**Bold [link](url)**`) showed raw markdown syntax instead of rendering the link.
+
+**Root Cause:** Regular paragraphs used `parseInlineElements()` which doesn't recursively parse nested formatting. When it found `**bold content**`, it extracted content as a flat string without parsing links inside. The newer `createInlineChildren()` supports recursive parsing but creates tree children that the layout system couldn't handle.
+
+**Solution:**
+1. Use `createInlineChildren()` for tree-based parsing (supports nested formatting)
+2. Call `collectDisplayText()` to get flattened display text
+3. Call `buildStyleRangesFromTree()` to derive style/link annotations on the paragraph
+4. Clear the tree children (Strong, Link, Text nodes)
+5. Add a single Text child with the flattened display text
+
+This approach combines the recursive parsing capability of the tree model with the flat layout structure the rendering system expects.
+
+**Files Modified:**
+- `src/engine/markdown_parser.cpp` - Updated regular paragraph parsing (lines 978-1001 and 964-986)
+- `src/engine/markdown_objects.h` - Added `clearChildren()` method
+- `tests/test_link_in_bold_debug.cpp` (NEW) - Added debug tests for nested formatting
+
+**Result:** Nested inline formatting now works correctly:
+- Link inside bold: `**Bold [link](url)**` → "Bold" in bold, "link" as bold+link
+- Bold inside link: `[link **bold**](url)` → "link" as link, "bold" as bold+link
+- All 107 tests passing
