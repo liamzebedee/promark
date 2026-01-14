@@ -277,6 +277,14 @@ int MarkdownRenderer::hitTest(float x, float y) const {
                 float lineStartX = rect.position.x;
                 float lineEndX = rect.position.x + line.width;
 
+                // Empty lines (width=0) are clickable across the entire line width
+                // This handles paragraph separators (empty lines from \n\n) that should be selectable
+                // We use the parent rect width to make the entire line clickable
+                bool isEmptyLine = (line.width == 0);
+                if (isEmptyLine) {
+                    lineEndX = lineStartX + rect.size.width;
+                }
+
                 if (x >= lineStartX && x <= lineEndX) {
                     // Perfect match - x and y both within this text
                     hitLayout = layout;

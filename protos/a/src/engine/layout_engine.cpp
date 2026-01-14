@@ -161,7 +161,7 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
         const MarkdownObject* childSource = child->getSourceObject();
         MarkdownObjectType childType = childSource->getType();
 
-        // Skip empty paragraphs visually (they exist for cursor positioning but don't add space)
+        // Handle empty paragraphs - they need minimum height to be clickable
         if (childType == MarkdownObjectType::Paragraph) {
             std::string text = childSource->getText();
             // Check if paragraph is empty (only has empty text children)
@@ -173,15 +173,19 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
                 }
             }
             if (isEmpty) {
-                // Still layout children (for cursor positioning) but at zero height
-                // The empty TextLayoutObject needs layout() called to create its LineInfo
+                // Empty paragraphs get minimum height (one line) so they're clickable
+                // This matches standard text editor behavior where empty lines are visible
+                float emptyLineHeight = Typography::BASE_FONT_SIZE;
                 Size childAvailable(availableSpace.width - marginLeft * 2, availableSpace.height - currentY);
                 for (const auto& grandchild : child->getChildren()) {
                     grandchild->layout(childAvailable);
                 }
-                child->setRect(Rect(marginLeft, currentY, availableSpace.width - marginLeft * 2, 0));
+                child->setRect(Rect(marginLeft, currentY, availableSpace.width - marginLeft * 2, emptyLineHeight));
                 // Propagate position to children (TextLayoutObject) for cursor positioning
                 propagatePositionToChildren(child.get(), marginLeft, currentY);
+                // Advance Y position by the empty line height plus block spacing
+                currentY += emptyLineHeight + Typography::BLOCK_SPACING;
+                isFirstVisibleChild = false;
                 continue;
             }
         }
