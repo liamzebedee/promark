@@ -1,4 +1,5 @@
 #include "markdown_renderer.h"
+#include <iostream>  // DEBUG
 
 MarkdownRenderer::MarkdownRenderer()
     : textBuffer(nullptr), lastTextVersion(0),
@@ -57,7 +58,7 @@ void MarkdownRenderer::setBackend(RenderBackend* backend) {
     rasterizer->setBackend(backend);
 }
 
-void MarkdownRenderer::render(const Size& viewportSize, float scrollOffsetY) {
+void MarkdownRenderer::render(const Size& viewportSize, float documentScrollY, float gpuScrollOffset) {
     // Check if text has changed using version tracking
     if (textBuffer && textBuffer->getVersion() != lastTextVersion) {
         lastTextVersion = textBuffer->getVersion();
@@ -82,7 +83,7 @@ void MarkdownRenderer::render(const Size& viewportSize, float scrollOffsetY) {
         paint();
     }
 
-    rasterize(viewportSize, scrollOffsetY);
+    rasterize(viewportSize, documentScrollY, gpuScrollOffset);
 }
 
 void MarkdownRenderer::ensureLayoutValid(const Size& viewportSize) {
@@ -145,11 +146,12 @@ void MarkdownRenderer::paint() {
     needsRepaint = false;
 }
 
-void MarkdownRenderer::rasterize(const Size& viewportSize, float scrollOffsetY) {
-    // Viewport for culling is in document space, with y = scrollOffset
-    // This allows the rasterizer to cull artifacts that are above or below the visible area
-    Rect viewport(0, scrollOffsetY, viewportSize.width, viewportSize.height);
-    rasterizer->rasterize(paintTree, viewport, scrollOffsetY, caretState.caretVisible);
+void MarkdownRenderer::rasterize(const Size& viewportSize, float documentScrollY, float gpuScrollOffset) {
+    // Viewport for culling is in document space - use the actual scroll position
+    // so we correctly cull content above/below the visible area
+    Rect viewport(0, documentScrollY, viewportSize.width, viewportSize.height);
+    // GPU scroll offset transforms document coordinates to screen coordinates
+    rasterizer->rasterize(paintTree, viewport, gpuScrollOffset, caretState.caretVisible);
 }
 
 const MarkdownObject* MarkdownRenderer::getObjectTree() const {
@@ -257,6 +259,7 @@ int MarkdownRenderer::hitTest(float x, float y) const {
     int hitDOMStart = 0;
     int hitLineIdx = -1;
 
+    std::cerr << "DEBUG hitTest: x=" << x << " y=" << y << " numLayouts=" << textLayouts.size() << std::endl;
     for (const auto& [layout, layoutDOMPos] : textLayouts) {
         const Rect& rect = layout->getRect();
         const auto& lines = layout->getLines();
@@ -270,6 +273,10 @@ int MarkdownRenderer::hitTest(float x, float y) const {
             // Visual text top is approximately yOffset + 0.2*fontSize
             float lineY = rect.position.y + line.yOffset + fontSize * 0.2f;
             float lineHeight = fontSize;
+            std::cerr << "  Layout domPos=" << layoutDOMPos << " rect.y=" << rect.position.y
+                      << " lineY=" << lineY << "-" << (lineY + lineHeight)
+                      << " lineX=" << rect.position.x << "-" << (rect.position.x + line.width)
+                      << " yMatch=" << (y >= lineY && y < lineY + lineHeight) << std::endl;
 
             // Check Y range
             if (y >= lineY && y < lineY + lineHeight) {
@@ -321,6 +328,7 @@ int MarkdownRenderer::hitTest(float x, float y) const {
             }
         }
 
+        std::cerr << "  Fallback 1: candidates.size()=" << candidates.size() << std::endl;
         if (!candidates.empty()) {
             // Find which candidate the x position falls into or is closest to
             for (const auto& [layout, layoutDOMPos, lineIdx, startX, endX] : candidates) {
@@ -411,8 +419,13 @@ int MarkdownRenderer::hitTest(float x, float y) const {
         }
     }
 
-    // Click is after all characters on this line
-    return domToRaw(hitDOMStart + lineEndChar);
+    // Click is after all characters on this line - position at end of line
+    // Use lineEndChar - 1 to stay within this object's DOM range, then add 1 to get end position
+    // This avoids domToRaw(boundary) returning the start of the next object
+    if (lineEndChar > lineStartChar) {
+        return domToRaw(hitDOMStart + lineEndChar - 1) + 1;
+    }
+    return domToRaw(hitDOMStart + lineStartChar);
 }
 
 float MarkdownRenderer::getCursorY(int domPos) const {

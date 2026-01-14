@@ -163,10 +163,10 @@ void Engine::render(int width, int height) {
         caret.useAnimatedPosition = true;
         markdownRenderer->setCaretState(caret);
 
-        // Pass scroll offset: TOOLBAR_HEIGHT shifts content below toolbar,
-        // -scrollOffset shifts content up for scrolling
-        float contentScrollOffset = TOOLBAR_HEIGHT - scrollOffset;
-        markdownRenderer->render(viewportSize, contentScrollOffset);
+        // documentScrollY: actual scroll position in document space (for viewport culling)
+        // gpuScrollOffset: TOOLBAR_HEIGHT - scrollOffset (shifts content for toolbar and scroll)
+        float gpuScrollOffset = TOOLBAR_HEIGHT - scrollOffset;
+        markdownRenderer->render(viewportSize, scrollOffset, gpuScrollOffset);
 
         contentHeight = markdownRenderer->getContentHeight();
     }
@@ -799,19 +799,36 @@ void Engine::moveCursorVertically(int direction, bool extendSelection) {
         // Use current cursor X for hit testing (preserves horizontal position during vertical nav)
         float targetX = cursorX;
 
-        // Calculate line height using the base font size (16px)
-        // Line height = font size * LINE_HEIGHT_RATIO (which is 1.0)
+        // Calculate the visual line spacing for navigation
+        // In markdown mode, paragraphs are separated by block spacing, and each paragraph
+        // has its own height. The actual visual spacing between line tops includes:
+        // - The paragraph's content height (font size * number of lines)
+        // - Block spacing between paragraphs
+        // For simple single-line paragraphs, this is typically font_size + block_spacing,
+        // but empirically the actual spacing is closer to 2*font_size.
         float lineHeight = Typography::BASE_FONT_SIZE;
+        // Use a larger step to ensure we land in the next line's hit region
+        // The hit region for each line has a 0.2*fontSize offset
+        float lineSpacing = lineHeight * 2;  // Conservative step that works for standard paragraphs
 
         // Calculate target Y position on adjacent visual line
-        // getCursorXY returns yOffset which is the top of the current line
-        // hitTest expects Y in the middle of a line (it uses a 0.2*fontSize offset)
-        // To reliably hit the adjacent line, add 0.5*lineHeight to aim at the center
-        float targetY = cursorY + (direction * lineHeight) + (lineHeight * 0.5f);
+        // getCursorXY returns the top of the current line
+        // The hit region for each line is offset by 0.2*fontSize from the rect top
+        // To ensure we land inside the next line's hit region, aim for the vertical center
+        // of the target line (add half lineHeight to the base step)
+        float targetY = cursorY + (direction * lineSpacing) + (lineHeight * 0.5f);
 
         // Use hit testing to find position at target coordinates
         // hitTest returns raw position
         int hitPos = markdownRenderer->hitTest(targetX, targetY);
+
+        // DEBUG: Print navigation info
+        std::cerr << "DEBUG moveCursorVertically: dir=" << direction
+                  << " cursorPos=" << cursorPos
+                  << " domPos=" << domPos
+                  << " cursorXY=(" << cursorX << "," << cursorY << ")"
+                  << " targetXY=(" << targetX << "," << targetY << ")"
+                  << " hitPos=" << hitPos << std::endl;
 
         // Only use hitPos if it actually moved us (avoid staying in place)
         if (hitPos != cursorPos) {

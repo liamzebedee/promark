@@ -37,7 +37,10 @@ public:
     void setCaretState(const CaretState& state);
     void setFontProvider(const FontProvider* provider);
     void setBackend(RenderBackend* backend);  // Set render backend for rasterization
-    void render(const Size& viewportSize, float scrollOffsetY = 0.0f);
+    // Render with scroll support:
+    // - documentScrollY: scroll position in document space (for viewport culling)
+    // - gpuScrollOffset: offset applied to GPU rendering (TOOLBAR_HEIGHT - documentScrollY)
+    void render(const Size& viewportSize, float documentScrollY = 0.0f, float gpuScrollOffset = 0.0f);
 
     // Force layout computation without painting (used to get accurate cursor position)
     void ensureLayoutValid(const Size& viewportSize);
@@ -46,7 +49,7 @@ public:
     void parseMarkdown();
     void performLayout(const Size& availableSpace);
     void paint();
-    void rasterize(const Size& viewportSize, float scrollOffsetY = 0.0f);
+    void rasterize(const Size& viewportSize, float documentScrollY = 0.0f, float gpuScrollOffset = 0.0f);
 
     const MarkdownObject* getObjectTree() const;
     const LayoutObject* getLayoutTree() const;
