@@ -203,6 +203,24 @@ void TestContext::simulateClick(double x, double y, int button) {
     }
 }
 
+void TestContext::simulateMousePress(double x, double y, int button) {
+    if (engine) {
+        engine->handleMouse(button, GLFW_PRESS, 0, x, y);
+    }
+}
+
+void TestContext::simulateMouseMove(double x, double y) {
+    if (engine) {
+        engine->handleMouseMove(x, y);
+    }
+}
+
+void TestContext::simulateMouseRelease(double x, double y, int button) {
+    if (engine) {
+        engine->handleMouse(button, GLFW_RELEASE, 0, x, y);
+    }
+}
+
 void TestContext::simulateScroll(double yOffset) {
     if (engine) {
         engine->handleScroll(0, yOffset);

@@ -54,3 +54,25 @@
 - `tests/test_helpers.cpp` - Implemented `setCursorPosition()` using keyboard navigation
 - `tests/test_home_end_keys.cpp` - Added 8 tests for Home/End key behavior
 - `Makefile` - Added new test file
+
+### Scrollbar Click and Drag (2026-01-14)
+
+**Issue:** Scrollbar was rendered visually but not interactive - clicks and drags had no effect.
+
+**Expected behavior (standard scrollbars):**
+- Click on thumb and drag: Scroll proportionally as thumb is dragged
+- Click on track (above thumb): Jump view up to that position
+- Click on track (below thumb): Jump view down to that position
+
+**Solution:**
+- Added scrollbar state variables to track dragging state and cached dimensions
+- Modified `render()` to cache scrollbar dimensions for hit testing
+- Added scrollbar click detection in `handleMouse()` with thumb vs track differentiation
+- Added scrollbar drag handling in `handleMouseMove()` with proportional scroll calculation
+
+**Files Modified:**
+- `src/engine/engine.h` - Added scrollbar state variables
+- `src/engine/engine.cpp` - Added scrollbar interaction handlers
+- `tests/test_helpers.h/cpp` - Added `simulateMousePress()`, `simulateMouseMove()`, `simulateMouseRelease()`
+- `tests/test_scrollbar.cpp` - Added visual test for scrollbar interaction
+- `Makefile` - Added test file to build

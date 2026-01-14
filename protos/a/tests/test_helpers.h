@@ -28,6 +28,9 @@ public:
     // Simulate input
     void simulateKey(int key, int mods = 0);
     void simulateClick(double x, double y, int button = GLFW_MOUSE_BUTTON_LEFT);
+    void simulateMousePress(double x, double y, int button = GLFW_MOUSE_BUTTON_LEFT);
+    void simulateMouseMove(double x, double y);
+    void simulateMouseRelease(double x, double y, int button = GLFW_MOUSE_BUTTON_LEFT);
     void simulateScroll(double yOffset);
 
     // Access engine for advanced testing

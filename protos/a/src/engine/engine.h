@@ -62,6 +62,18 @@ private:
     float contentHeight;
     int viewportHeight;
 
+    // Scrollbar interaction state
+    bool scrollbarDragging;
+    float scrollbarDragStartY;
+    float scrollbarDragStartOffset;
+    // Cached scrollbar dimensions (updated in render)
+    float scrollbarTrackX;
+    float scrollbarTrackTop;
+    float scrollbarTrackHeight;
+    float scrollbarThumbY;
+    float scrollbarThumbHeight;
+    float scrollbarMaxScroll;
+
     // TextBuffer is the single source of truth for document content
     // All text operations go through this class
     std::unique_ptr<TextBuffer> textBuffer;

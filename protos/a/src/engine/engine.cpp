@@ -8,6 +8,9 @@
 
 Engine::Engine() : wantsToClose(false), leftMouseHeld(false), lastClickTime(0), lastClickX(0), lastClickY(0), clickCount(0),
                    scrollOffset(0.0f), contentHeight(0.0f), viewportHeight(0),
+                   scrollbarDragging(false), scrollbarDragStartY(0), scrollbarDragStartOffset(0),
+                   scrollbarTrackX(0), scrollbarTrackTop(0), scrollbarTrackHeight(0),
+                   scrollbarThumbY(0), scrollbarThumbHeight(0), scrollbarMaxScroll(0),
                    fontLoaded(false), cursorPos(0), goalColumn(0), selectionStart(0), selectionEnd(0), hasSelection(false),
                    viewportWidth(800),
                    caretAnimX(0), caretAnimY(0),
@@ -205,6 +208,14 @@ void Engine::render(int width, int height) {
         } else {
             thumbY = trackTop + scrollRatio * (trackHeight - thumbHeight);
         }
+
+        // Cache scrollbar dimensions for hit testing in mouse handlers
+        scrollbarTrackX = trackX;
+        scrollbarTrackTop = trackTop;
+        scrollbarTrackHeight = trackHeight;
+        scrollbarThumbY = thumbY;
+        scrollbarThumbHeight = thumbHeight;
+        scrollbarMaxScroll = maxScroll;
 
         // Draw scrollbar thumb using render backend
         renderBackend->setScrollOffset(0);  // No scroll for fixed UI
@@ -515,6 +526,24 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                 return;
             }
 
+            // Check scrollbar click
+            float scrollbarWidth = 7.0f;
+            if (scrollbarMaxScroll > 0 && x >= scrollbarTrackX && x <= scrollbarTrackX + scrollbarWidth) {
+                // Click is in scrollbar area
+                if (y >= scrollbarThumbY && y <= scrollbarThumbY + scrollbarThumbHeight) {
+                    // Clicking on thumb - start drag
+                    scrollbarDragging = true;
+                    scrollbarDragStartY = static_cast<float>(y);
+                    scrollbarDragStartOffset = scrollOffset;
+                } else if (y >= scrollbarTrackTop && y < scrollbarTrackTop + scrollbarTrackHeight) {
+                    // Clicking on track (not thumb) - jump to that position
+                    float clickRatio = (static_cast<float>(y) - scrollbarTrackTop) / scrollbarTrackHeight;
+                    scrollOffset = clickRatio * scrollbarMaxScroll;
+                    scrollOffset = std::max(0.0f, std::min(scrollOffset, scrollbarMaxScroll));
+                }
+                return;  // Don't process as text click
+            }
+
             leftMouseHeld = true;
 
             // Detect multi-click (within 400ms and 5 pixels)
@@ -594,6 +623,7 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
             lastClickY = y;
         } else if (action == GLFW_RELEASE) {
             leftMouseHeld = false;
+            scrollbarDragging = false;
         }
     }
 }
@@ -605,6 +635,18 @@ void Engine::openUrl(const std::string& url) {
 }
 
 void Engine::handleMouseMove(double x, double y) {
+    // Handle scrollbar dragging
+    if (scrollbarDragging) {
+        float deltaY = static_cast<float>(y) - scrollbarDragStartY;
+        // Convert pixel delta to scroll offset delta
+        // scrollbarTrackHeight pixels corresponds to scrollbarMaxScroll scroll range
+        float scrollDelta = (scrollbarTrackHeight > 0) ?
+            (deltaY / scrollbarTrackHeight) * scrollbarMaxScroll : 0;
+        scrollOffset = scrollbarDragStartOffset + scrollDelta;
+        scrollOffset = std::max(0.0f, std::min(scrollOffset, scrollbarMaxScroll));
+        return;
+    }
+
     if (leftMouseHeld) {
         int newPos;
         if (showRaw) {
