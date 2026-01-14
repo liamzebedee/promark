@@ -52,6 +52,18 @@
                 0 0 0 1px rgba(0, 0, 0, 0.2);
             width: 900px;
             height: 700px;
+            max-width: calc(100vw - 32px);
+            max-height: 70vh;
+        }
+        #mobile-input {
+            position: absolute;
+            left: -9999px;
+            opacity: 0;
+        }
+        @media (max-width: 768px) {
+            h1 { font-size: 22px; }
+            .subtitle { font-size: 12px; }
+            .container { gap: 8px; padding: 16px; }
         }
         .status {
             color: #666;
@@ -94,6 +106,7 @@
         <p class="subtitle">the professional markdown processor</p>
         <span class="warning">indev, totally broken</span>
         <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
+        <input type="text" id="mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <textarea id="clipboard-helper" style="position:absolute;left:-9999px;"></textarea>
         <div id="status" class="status loading">Loading...</div>
         <p class="footer">Programmed in C++, OpenGL. <a href="https://github.com/liamzebedee/promark" target="_blank">GitHub</a></p>
@@ -237,9 +250,44 @@
             e.preventDefault();
         });
 
+        // Mobile keyboard support
+        var mobileInput = document.getElementById('mobile-input');
+        var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+        function focusForKeyboard() {
+            if (isMobile) {
+                mobileInput.focus();
+            } else {
+                canvas.focus();
+            }
+        }
+
         // Keep focus
-        canvas.addEventListener('click', function() {
-            canvas.focus();
+        canvas.addEventListener('click', focusForKeyboard);
+        canvas.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            focusForKeyboard();
+        });
+
+        // Mobile input handler
+        mobileInput.addEventListener('input', function(e) {
+            if (!moduleReady) return;
+            var text = mobileInput.value;
+            if (text) {
+                insertText(text);
+                mobileInput.value = '';
+            }
+        });
+
+        mobileInput.addEventListener('keydown', function(e) {
+            if (!moduleReady) return;
+            if (e.key === 'Backspace') {
+                e.preventDefault();
+                handleKey(KEY_MAP['Backspace'], 0);
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                handleKey(KEY_MAP['Enter'], 0);
+            }
         });
 
         // Public API
