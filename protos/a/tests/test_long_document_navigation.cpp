@@ -21,7 +21,7 @@ TestResult test_down_arrow_full_document(TestContext& ctx) {
     std::vector<std::string> screenshots;
     Engine* engine = ctx.getEngine();
 
-    // Load the long document (tests run from build directory, so go up one level)
+    // Load the long document (tests run from protos/a directory)
     std::string content = readFile("../resources/long-post.md");
     if (content.empty()) {
         return TestResult{"test_down_arrow_full_document", false,

@@ -618,6 +618,10 @@ void Engine::handleMouse(int button, int action, int mods, double x, double y) {
                 caretAnimY = caretTargetY;
             }
 
+            // Reset blink timer so caret is immediately visible after click
+            lastBlinkTime = glfwGetTime();
+            caretVisible = true;
+
             lastClickTime = currentTime;
             lastClickX = x;
             lastClickY = y;
