@@ -184,11 +184,16 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/engine.h`, `src/engine/engine.cpp`
 
 ### P1-5: Pre-Compute Styles in LayoutObject
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: None
-- **Problem**: Layout objects compute styles on-demand via `getFontSize()` which switches on source type (`layout_objects.cpp:48-63`)
-- **Required**: Styles should be resolved and cached during layout phase
+- **Solution**: Added font size caching and character-level style pre-computation:
+  - Added font size caching to LayoutObject with automatic invalidation
+  - Added ComputedCharStyles struct for character-level style caching
+  - TextLayoutObject::computeCharStyles() pre-computes styles during layout
+  - Painter now uses pre-computed styles instead of recomputing every paint
+  - Performance improvements: Font size lookups O(1), style arrays computed once per layout
+  - All 12 tests pass
 - **Spec Reference**: `specs/02-layout-system.md` - "fully resolved style information"
 - **Files**: `src/engine/layout_objects.cpp`, `src/engine/layout_objects.h`
 
@@ -440,4 +445,4 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P0-5 corrected to MOSTLY COMPLETE (tree structure exists, annotations derived from tree), P2-3 marked COMPLETED (nested formatting works)*
+*Last updated: 2026-01-14 - P1-5 marked COMPLETED (font size caching and character-level style pre-computation)*
