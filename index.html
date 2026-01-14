@@ -63,6 +63,18 @@
         .status.ready {
             color: #3a7340;
         }
+        .footer {
+            color: #777;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .footer a {
+            color: #2968b0;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -73,6 +85,7 @@
         <canvas id="canvas" tabindex="0" oncontextmenu="event.preventDefault()"></canvas>
         <textarea id="clipboard-helper" style="position:absolute;left:-9999px;"></textarea>
         <div id="status" class="status loading">Loading...</div>
+        <p class="footer">Programmed in C++, OpenGL. <a href="https://github.com/liamzebedee/promark" target="_blank">GitHub</a></p>
     </div>
 
     <script>
