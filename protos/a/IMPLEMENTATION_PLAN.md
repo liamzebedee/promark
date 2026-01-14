@@ -124,11 +124,15 @@ These must be resolved first as they block correct implementation of other featu
 - **Note**: The stub method layoutInlineFlow() was deleted as part of P3-2. The method was never called - explicit Text handling in performLayout() ensures TextLayoutObject::layout() is called directly. This item is no longer applicable.
 
 ### P2-5: Add Box Model (Margin/Padding)
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: None
-- **Problem**: No margin/padding support on layout objects
-- **Spec Reference**: `specs/02-layout-system.md` - box model requirements
+- **Solution**: Added box model infrastructure to LayoutObject:
+  - Created EdgeInsets struct with top/right/bottom/left values and convenience methods (all(), symmetric(), horizontal(), vertical())
+  - Added margin and padding member variables to LayoutObject (initialized to zero)
+  - Added setMargin(), setPadding(), getMargin(), getPadding() accessors
+  - Added getContentBox() (alias for getRect), getPaddingBox(), getMarginBox() methods
+  - Infrastructure enables debug visualization of box model and future layout refactoring
 - **Files**: `src/engine/layout_objects.h`, `src/engine/layout_objects.cpp`
 
 ### P2-6: Pre-Load Images Before Layout

@@ -5,7 +5,8 @@
 #include "stb/stb_image.h"
 
 LayoutObject::LayoutObject(const MarkdownObject* sourceObject, LayoutFlow flow)
-    : sourceObject(sourceObject), flow(flow), parent(nullptr),
+    : sourceObject(sourceObject), flow(flow), rect(), children(), parent(nullptr),
+      margin(), padding(),  // P2-5: Initialize box model with zero insets
       cachedFontSize(-1.0f), cachedFontSizeParent(nullptr) {
 }
 
@@ -26,6 +27,27 @@ void LayoutObject::setRect(const Rect& rect) {
 
 const Rect& LayoutObject::getRect() const {
     return rect;
+}
+
+Rect LayoutObject::getPaddingBox() const {
+    // Padding box = content box expanded by padding
+    return Rect(
+        rect.position.x - padding.left,
+        rect.position.y - padding.top,
+        rect.size.width + padding.horizontal(),
+        rect.size.height + padding.vertical()
+    );
+}
+
+Rect LayoutObject::getMarginBox() const {
+    // Margin box = padding box expanded by margin
+    Rect paddingBox = getPaddingBox();
+    return Rect(
+        paddingBox.position.x - margin.left,
+        paddingBox.position.y - margin.top,
+        paddingBox.size.width + margin.horizontal(),
+        paddingBox.size.height + margin.vertical()
+    );
 }
 
 void LayoutObject::addChild(std::unique_ptr<LayoutObject> child) {

@@ -17,8 +17,22 @@ struct Size {
 struct Rect {
     Point position;
     Size size;
-    Rect(float x = 0, float y = 0, float w = 0, float h = 0) 
+    Rect(float x = 0, float y = 0, float w = 0, float h = 0)
         : position(x, y), size(w, h) {}
+};
+
+// Box model edge insets for margin and padding (P2-5)
+struct EdgeInsets {
+    float top, right, bottom, left;
+    EdgeInsets(float t = 0, float r = 0, float b = 0, float l = 0)
+        : top(t), right(r), bottom(b), left(l) {}
+    // Convenience constructors
+    static EdgeInsets all(float value) { return EdgeInsets(value, value, value, value); }
+    static EdgeInsets symmetric(float vertical, float horizontal) {
+        return EdgeInsets(vertical, horizontal, vertical, horizontal);
+    }
+    float horizontal() const { return left + right; }
+    float vertical() const { return top + bottom; }
 };
 
 enum class LayoutFlow {
@@ -35,6 +49,21 @@ public:
 
     void setRect(const Rect& rect);
     const Rect& getRect() const;
+
+    // Box model (P2-5): margin and padding
+    void setMargin(const EdgeInsets& m) { margin = m; }
+    void setPadding(const EdgeInsets& p) { padding = p; }
+    const EdgeInsets& getMargin() const { return margin; }
+    const EdgeInsets& getPadding() const { return padding; }
+
+    // Get content box (alias for getRect for clarity)
+    const Rect& getContentBox() const { return rect; }
+
+    // Get padding box (content box expanded by padding)
+    Rect getPaddingBox() const;
+
+    // Get margin box (padding box expanded by margin)
+    Rect getMarginBox() const;
 
     void addChild(std::unique_ptr<LayoutObject> child);
     const std::vector<std::unique_ptr<LayoutObject>>& getChildren() const;
@@ -59,6 +88,10 @@ protected:
     Rect rect;
     std::vector<std::unique_ptr<LayoutObject>> children;
     LayoutObject* parent;
+
+    // Box model (P2-5): margin and padding values
+    EdgeInsets margin;   // Outer spacing from other elements
+    EdgeInsets padding;  // Inner spacing around content
 
     // Cached font size (P1-5: Pre-computed styles)
     mutable float cachedFontSize = -1.0f;  // -1 = not computed
