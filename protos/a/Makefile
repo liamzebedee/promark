@@ -67,7 +67,8 @@ TEST_SOURCES = $(TEST_DIR)/run_tests.cpp \
                $(TEST_DIR)/test_inline_block.cpp \
                $(TEST_DIR)/test_block_layout.cpp \
                $(TEST_DIR)/test_cursor_positioning.cpp \
-               $(TEST_DIR)/test_mouse_click.cpp
+               $(TEST_DIR)/test_mouse_click.cpp \
+               $(TEST_DIR)/test_bug_caret_after_typing.cpp
 
 # Test objects (engine objects + test-specific objects)
 ENGINE_OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(ENGINE_SRC))

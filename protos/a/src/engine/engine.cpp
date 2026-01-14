@@ -138,6 +138,16 @@ void Engine::render(int width, int height) {
         // Render raw text mode
         renderRawText(width, height);
     } else if (markdownRenderer) {
+        Size viewportSize(width, contentAreaHeight);
+
+        // IMPORTANT: Ensure layout is valid BEFORE updating caret animation.
+        // This allows getCursorXY() to return accurate positions from the fresh layout.
+        markdownRenderer->ensureLayoutValid(viewportSize);
+
+        // Update animated cursor position with accurate target from layout.
+        // This must happen BEFORE setCaretState so the painted caret uses the correct position.
+        updateCaretAnimation();
+
         int domCursorPos = markdownRenderer->rawToDOM(cursorPos);
         int domSelStart = markdownRenderer->rawToDOM(selectionStart);
         int domSelEnd = markdownRenderer->rawToDOM(selectionEnd);
@@ -153,16 +163,12 @@ void Engine::render(int width, int height) {
         caret.useAnimatedPosition = true;
         markdownRenderer->setCaretState(caret);
 
-        Size viewportSize(width, contentAreaHeight);
         // Pass scroll offset: TOOLBAR_HEIGHT shifts content below toolbar,
         // -scrollOffset shifts content up for scrolling
         float contentScrollOffset = TOOLBAR_HEIGHT - scrollOffset;
         markdownRenderer->render(viewportSize, contentScrollOffset);
 
         contentHeight = markdownRenderer->getContentHeight();
-
-        // Update animated cursor position (lerp toward target)
-        updateCaretAnimation();
     }
 
     // Pop clip before drawing fixed UI elements
@@ -888,14 +894,29 @@ void Engine::updateCaretAnimation() {
     int domPos = markdownRenderer->rawToDOM(cursorPos);
     markdownRenderer->getCursorXY(domPos, caretTargetX, caretTargetY);
 
-    // Simple smooth lerp
-    float t = 0.4f;
-    caretAnimX += (caretTargetX - caretAnimX) * t;
-    caretAnimY += (caretTargetY - caretAnimY) * t;
+    // Calculate distance to target
+    float dx = caretTargetX - caretAnimX;
+    float dy = caretTargetY - caretAnimY;
+    float distance = std::sqrt(dx * dx + dy * dy);
 
-    // Snap when close
-    if (std::abs(caretTargetX - caretAnimX) < 0.5f) caretAnimX = caretTargetX;
-    if (std::abs(caretTargetY - caretAnimY) < 0.5f) caretAnimY = caretTargetY;
+    // If target moved significantly (e.g., cursor jumped to new position),
+    // snap immediately instead of lerping. This prevents the "lagging caret" bug
+    // when typing or pressing Enter.
+    const float snapThreshold = 20.0f;  // pixels
+    if (distance > snapThreshold) {
+        caretAnimX = caretTargetX;
+        caretAnimY = caretTargetY;
+        return;
+    }
+
+    // Simple smooth lerp for small movements (e.g., single character)
+    float t = 0.4f;
+    caretAnimX += dx * t;
+    caretAnimY += dy * t;
+
+    // Snap when very close
+    if (std::abs(dx) < 0.5f) caretAnimX = caretTargetX;
+    if (std::abs(dy) < 0.5f) caretAnimY = caretTargetY;
 }
 
 void Engine::recordInsert(size_t position, const std::string& text) {

@@ -39,6 +39,9 @@ public:
     void setBackend(RenderBackend* backend);  // Set render backend for rasterization
     void render(const Size& viewportSize, float scrollOffsetY = 0.0f);
 
+    // Force layout computation without painting (used to get accurate cursor position)
+    void ensureLayoutValid(const Size& viewportSize);
+
     // Manual pipeline control for debugging/testing
     void parseMarkdown();
     void performLayout(const Size& availableSpace);

@@ -85,6 +85,29 @@ void MarkdownRenderer::render(const Size& viewportSize, float scrollOffsetY) {
     rasterize(viewportSize, scrollOffsetY);
 }
 
+void MarkdownRenderer::ensureLayoutValid(const Size& viewportSize) {
+    // Check if text has changed using version tracking
+    if (textBuffer && textBuffer->getVersion() != lastTextVersion) {
+        lastTextVersion = textBuffer->getVersion();
+        needsReparse = true;
+    }
+
+    if (needsReparse) {
+        parseMarkdown();
+    }
+
+    if (viewportSize.width != lastViewportSize.width ||
+        viewportSize.height != lastViewportSize.height) {
+        needsRelayout = true;
+        lastViewportSize = viewportSize;
+    }
+
+    if (needsRelayout) {
+        performLayout(viewportSize);
+    }
+    // Note: needsRepaint is left as-is, will be handled by render()
+}
+
 void MarkdownRenderer::parseMarkdown() {
     if (!textBuffer) {
         return;
