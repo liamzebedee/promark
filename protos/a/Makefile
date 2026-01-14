@@ -79,7 +79,8 @@ TEST_SOURCES = $(TEST_DIR)/run_tests.cpp \
                $(TEST_DIR)/test_up_nav.cpp \
                $(TEST_DIR)/test_scroll_visual_mode.cpp \
                $(TEST_DIR)/test_sticky_verification.cpp \
-               $(TEST_DIR)/test_keyboard_shortcuts.cpp
+               $(TEST_DIR)/test_keyboard_shortcuts.cpp \
+               $(TEST_DIR)/test_home_end_keys.cpp
 
 # Test objects (engine objects + test-specific objects)
 ENGINE_OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(ENGINE_SRC))

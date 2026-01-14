@@ -138,9 +138,13 @@ void TestContext::setContent(const std::string& markdown) {
 }
 
 void TestContext::setCursorPosition(int pos) {
-    // Simulate setting cursor by clicking at position 0,0 then moving
-    // For now, we need to access engine internals or use keyboard simulation
-    // This will be enhanced based on Engine's public API
+    // Navigate to position using keyboard:
+    // 1. Go to document start (Ctrl+Up)
+    // 2. Move right `pos` times
+    simulateKey(GLFW_KEY_UP, GLFW_MOD_CONTROL);  // Go to start
+    for (int i = 0; i < pos; i++) {
+        simulateKey(GLFW_KEY_RIGHT, 0);  // Move right one position at a time
+    }
 }
 
 void TestContext::setScrollOffset(float offset) {

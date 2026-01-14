@@ -418,22 +418,44 @@ void Engine::handleKeyboard(int key, int scancode, int action, int mods) {
             }
             
         } else if (key == GLFW_KEY_HOME) {
-            cursorPos = 0;
-            if (!shift) hasSelection = false;
-            else {
-                if (!hasSelection) selectionStart = cursorPos;
-                selectionEnd = cursorPos;
-                hasSelection = true;
+            // Ctrl+Home: go to document start
+            // Home: go to line start
+            int newPos;
+            if (cmdOrCtrl) {
+                newPos = 0;
+            } else {
+                newPos = findLineStart(cursorPos);
             }
 
-        } else if (key == GLFW_KEY_END) {
-            cursorPos = static_cast<int>(textBuffer->getLength());
-            if (!shift) hasSelection = false;
-            else {
-                if (!hasSelection) selectionStart = cursorPos;
-                selectionEnd = cursorPos;
+            if (shift) {
+                if (!hasSelection) selectionStart = cursorPos;  // Save position BEFORE moving
+                selectionEnd = newPos;
                 hasSelection = true;
+            } else {
+                hasSelection = false;
             }
+            cursorPos = newPos;
+            goalColumn = getColumnInLine(cursorPos);
+
+        } else if (key == GLFW_KEY_END) {
+            // Ctrl+End: go to document end
+            // End: go to line end
+            int newPos;
+            if (cmdOrCtrl) {
+                newPos = static_cast<int>(textBuffer->getLength());
+            } else {
+                newPos = findLineEnd(cursorPos);
+            }
+
+            if (shift) {
+                if (!hasSelection) selectionStart = cursorPos;  // Save position BEFORE moving
+                selectionEnd = newPos;
+                hasSelection = true;
+            } else {
+                hasSelection = false;
+            }
+            cursorPos = newPos;
+            goalColumn = getColumnInLine(cursorPos);
             
         } else if (key == GLFW_KEY_ENTER) {
             insertChar('\n');
