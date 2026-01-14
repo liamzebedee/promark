@@ -50,10 +50,8 @@
                 0 2px 8px rgba(0, 0, 0, 0.3),
                 inset 0 0 0 1px rgba(255, 255, 255, 0.5),
                 0 0 0 1px rgba(0, 0, 0, 0.2);
-            width: 900px;
-            height: 700px;
-            max-width: calc(100vw - 32px);
-            max-height: 70vh;
+            width: min(900px, calc(100vw - 32px));
+            height: min(700px, 70vh);
         }
         #mobile-input {
             position: absolute;
@@ -118,6 +116,16 @@
         setInterval(function() {
             document.getElementById('fps').textContent = Math.floor(480 + Math.random() * 40);
         }, 100);
+
+        // Sync canvas buffer size with CSS display size
+        function resizeCanvas() {
+            var dpr = window.devicePixelRatio || 1;
+            var rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
 
         // GLFW key codes
         var GLFW_PRESS = 1;
