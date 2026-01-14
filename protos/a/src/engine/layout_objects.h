@@ -22,8 +22,7 @@ struct Rect {
 };
 
 enum class LayoutFlow {
-    Block,
-    Inline
+    Block
 };
 
 class LayoutObject {
@@ -72,11 +71,6 @@ public:
     void layout(const Size& availableSpace) override;
 };
 
-class InlineLayoutObject : public LayoutObject {
-public:
-    InlineLayoutObject(const MarkdownObject* sourceObject);
-    void layout(const Size& availableSpace) override;
-};
 
 // Pre-computed character-level styles (P1-5: Fully resolved style information)
 // Computed once during layout, reused by painter without recomputation

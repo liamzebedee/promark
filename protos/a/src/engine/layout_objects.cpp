@@ -114,16 +114,9 @@ void BlockLayoutObject::layout(const Size& availableSpace) {
     setRect(Rect(0, 0, availableSpace.width, currentY));
 }
 
-InlineLayoutObject::InlineLayoutObject(const MarkdownObject* sourceObject) 
-    : LayoutObject(sourceObject, LayoutFlow::Inline) {
-}
-
-void InlineLayoutObject::layout(const Size& availableSpace) {
-    // TODO: Implement inline layout (horizontal flow with line breaking)
-}
 
 TextLayoutObject::TextLayoutObject(const MarkdownObject* sourceObject)
-    : LayoutObject(sourceObject, LayoutFlow::Inline), fontProvider(nullptr), availableWidth(0) {
+    : LayoutObject(sourceObject, LayoutFlow::Block), fontProvider(nullptr), availableWidth(0) {
 }
 
 Size TextLayoutObject::computeIntrinsicSize() const {

@@ -20,80 +20,26 @@ These must be resolved first as they block correct implementation of other featu
 - **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: None
-- **Problem**: Three copies of document exist:
-  1. `inputBuffer char[]` in Engine (10MB, authoritative) - `engine.h:52-54`
-  2. `TextBuffer` in Engine (sync'd via setText)
-  3. `TextBuffer` in MarkdownRenderer (another copy)
-- **Solution**: TextBuffer is now the single source of truth for document content with version tracking (getVersion()) and dirty flag (isDirty(), markClean())
-- **Spec Reference**: `specs/05-text-buffer.md`
-- **Files**: `src/engine/engine.h`, `src/engine/engine.cpp`, `src/engine/text_buffer.h`
 
 ### P0-2: Remove inputBuffer char[] from Engine
 - **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: P0-1
-- **Problem**: Raw `char*` buffer is authoritative instead of TextModel
-- **Solution**: Engine no longer has inputBuffer char[] - all text operations now go through TextBuffer. MarkdownRenderer accepts a const TextBuffer* pointer instead of owning a copy, using version tracking to detect changes.
-- **Files**: `src/engine/engine.h:52`, `src/engine/engine.cpp`
 
 ### P0-3: Create RenderBackend Abstraction
 - **Status**: COMPLETED
 - **Complexity**: XL
 - **Dependencies**: None
-- **Solution**: Created unified RenderBackend architecture:
-  - Created `RenderBackend` abstract interface in `render_backend.h` with:
-    - Frame lifecycle: `init()`, `beginFrame()`, `endFrame()`
-    - Viewport/clear: `setViewport()`, `clear()`
-    - Clipping: `pushClip()`, `popClip()`
-    - Drawing: `drawRect()`, `drawLine()`, `drawText()`, `drawImage()`
-    - Textures: `createTexture()`, `deleteTexture()`
-    - Batching: `setScrollOffset()`, `flush()`
-  - Created `OpenGLBackend` implementation absorbing all GL calls from:
-    - GlyphAtlas (glyph texture management)
-    - BatchRenderer (shaders, VBO, drawing)
-    - Engine (viewport, clear, scissor, blend)
-    - Rasterizer (image texture creation)
-  - Updated `Rasterizer` to use `RenderBackend*` interface
-  - Updated `MarkdownRenderer` with `setBackend()` method
-  - Updated `Engine` to create/own `OpenGLBackend` and pass to subsystems
-  - Removed `glyph_atlas.cpp` and `batch_renderer.cpp` from build (absorbed into backend)
-  - All 12 tests pass
-- **Spec Reference**: `specs/04-rasterization.md` - "Single GL Authority Rule"
-- **Files**: `src/engine/render_backend.h`, `src/engine/opengl_backend.h`, `src/engine/opengl_backend.cpp`, `src/engine/rasterizer.h`, `src/engine/rasterizer.cpp`, `src/engine/markdown_renderer.h`, `src/engine/markdown_renderer.cpp`, `src/engine/engine.h`, `src/engine/engine.cpp`, `sources.mk`
 
 ### P0-4: Unify Layout Authority
 - **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: None
-- **Problem**: Split authority - 4 of 8 layout objects positioned themselves:
-  - `TableLayoutObject::layout()` - lines 550-576
-  - `TableRowLayoutObject::layout()` - lines 587-624
-  - `TableCellLayoutObject::layout()` - lines 635-662
-  - `ListItemLayoutObject::layout()` - lines 670-693
-- **Solution**:
-  1. Removed special-case delegation in `performLayout()` for Table/TableRow/TableCell/ListItem
-  2. Added new methods to LayoutEngine: `layoutTable()`, `layoutTableRow()`, `layoutTableCell()`, `layoutListItem()`, `computeTableColumnWidths()`
-  3. Updated `layoutBlockFlow()` to call `layoutListItem()` directly for ListItem children
-  4. Removed the `skipPropagate` flag workaround (ready for cleanup in P3-3)
-  5. Updated the layout objects to have no-op `layout()` methods (marked as bypassed, kept for backwards compatibility)
-
-  The engine is now the sole authority for positioning. All 12 tests pass.
-- **Spec Reference**: `specs/02-layout-system.md` - "Engine Coordinates, Objects Measure"
-- **Files**: `src/engine/layout_objects.cpp`, `src/engine/layout_engine.cpp`
 
 ### P0-5: Inline Formatting Tree Model
 - **Status**: MOSTLY COMPLETE
 - **Complexity**: XL
 - **Dependencies**: None
-- **Current State**:
-  - Tree structure is fully implemented via `createInlineChildren()` method (`markdown_parser.cpp:262-453`)
-  - Structural tree nodes are created and used: `StrongObject`, `EmphasisObject`, `InlineCodeObject`, `LineBreakObject`, `StrikethroughObject`
-  - Nested formatting works correctly (e.g., `***bold italic***` creates Strong > Emphasis > Text)
-  - Annotations (`InlineStyleRange`) are DERIVED from the tree via `buildStyleRangesFromTree()` for layout/paint compatibility
-- **Architecture**: The parser creates hierarchical inline nodes per spec. Style ranges are derived from the tree for the current layout/paint implementation.
-- **Remaining Work**: Optionally migrate layout/paint to consume the tree directly (may not be necessary given the current approach works correctly)
-- **Spec Reference**: `specs/01-document-model.md` - "Formatting is Structural"
-- **Files**: `src/engine/markdown_parser.cpp`, `src/engine/markdown_objects.h`, `src/engine/markdown_objects.cpp`
 
 ---
 
@@ -103,137 +49,41 @@ These must be resolved first as they block correct implementation of other featu
 - **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: None
-- **Solution**: Created unified DrawRect with RectRole enum:
-  - Added `RectRole` enum with values: Background, Selection, Caret, Border, Debug
-  - Extended `DrawRectOp` with role field and getRole() accessor
-  - Added convenience constructor (defaults to Background role) for backwards compatibility
-  - Removed separate `PaintOpType` enum values for DrawDebugBorder, DrawCaret, DrawSelectionRect
-  - Deleted `DrawDebugBorderOp`, `DrawCaretOp`, `DrawSelectionRectOp` classes
-  - Updated painter.cpp to use DrawRectOp with appropriate roles
-  - Updated rasterizer to handle all roles in unified executeDrawRect():
-    - Background/Selection: filled rectangle
-    - Caret: filled rectangle (respects visibility for blinking)
-    - Border: 1px stroke (4 thin rectangles)
-    - Debug: 2px stroke for layout visualization
-  - All 12 tests pass
-- **Spec Reference**: `specs/03-rendering-pipeline.md` - unified DrawRect with role field
-- **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/painter.cpp`, `src/engine/rasterizer.h`, `src/engine/rasterizer.cpp`
 
 ### P1-2: Convert Flat DisplayList to Hierarchical PaintTree
 - **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: P0-3
-- **Solution**: Implemented hierarchical PaintTree structure for efficient viewport culling:
-  - Created `PaintArtifact` class in `paint_operations.h` with:
-    - `displayItems`: Drawing commands for this node
-    - `bounds`: Bounding box for viewport culling
-    - `clipRect`: Optional structural clip region (not push/pop)
-    - `children`: Child artifacts (owned via unique_ptr)
-  - Added `PaintTree` type alias (`std::unique_ptr<PaintArtifact>`)
-  - Updated `Painter::paint()` to return `PaintTree` instead of `DisplayList`
-  - Updated `Painter::paintLayoutObject()` to create hierarchical artifacts mirroring layout tree
-  - Updated `Rasterizer::rasterize()` to accept `PaintTree` with viewport culling:
-    - `rasterizeArtifact()` recursively traverses tree
-    - `boundsIntersectViewport()` enables subtree culling
-    - Entire subtrees outside viewport are skipped
-  - Added `rasterizeDisplayList()` for legacy compatibility
-  - Updated `MarkdownRenderer` to use `PaintTree` (renamed `displayList` to `paintTree`)
-  - All 12 tests pass
-- **Benefits**:
-  - Culling: Skip entire subtrees outside viewport
-  - Clipping: Structural property, not stateful push/pop
-  - Caching: Unchanged subtrees can be reused (future)
-  - Debugging: Paint tree mirrors layout tree structure
-- **Spec Reference**: `specs/03-rendering-pipeline.md`
-- **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/painter.h`, `src/engine/painter.cpp`, `src/engine/rasterizer.h`, `src/engine/rasterizer.cpp`, `src/engine/markdown_renderer.h`, `src/engine/markdown_renderer.cpp`
 
 ### P1-3: Create FontProvider Abstraction
 - **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: None
-- **Solution**: Created FontProvider abstraction to remove FT_Face from layout layer public APIs:
-  - Created `FontProvider` abstract interface in `font_provider.h` with:
-    - `getGlyphAdvance(codepoint, fontSize, monospace)` for glyph measurement
-    - `getLineHeight(fontSize, monospace)` for line metrics
-    - `getFallbackCharWidth(fontSize, monospace)` with default implementation
-  - Created `FreeTypeFontProvider` concrete implementation that wraps FT_Face
-  - Updated `LayoutEngine` to use `FontProvider*` instead of `FT_Face`
-  - Updated `TextLayoutObject` to use `FontProvider*` for text measurement
-  - Updated `MarkdownRenderer` to accept `FontProvider*` via `setFontProvider()`
-  - Updated `Engine` to create and own `FreeTypeFontProvider`
-  - Note: `FT_Face` remains in rendering layer (Rasterizer, BatchRenderer, GlyphAtlas) which is appropriate since they're internal to the rendering backend
-  - All 12 tests pass
-- **Spec Reference**: `specs/02-layout-system.md` - "No Platform Types in Public APIs"
-- **Files**: `src/engine/font_provider.h`, `src/engine/freetype_font_provider.h`, `src/engine/freetype_font_provider.cpp`, `src/engine/layout_engine.h`, `src/engine/layout_objects.h`, `src/engine/markdown_renderer.h`, `src/engine/engine.h`
 
 ### P1-4: Implement Operation-Based Undo/Redo
 - **Status**: COMPLETED
 - **Complexity**: L
 - **Dependencies**: P0-1
-- **Solution**: Implemented full operation-based undo/redo system:
-  - Created `TextOpType` enum (Insert, Delete, Replace)
-  - Created `TextOperation` struct with position, insertedText, deletedText
-  - Created `UndoEntry` struct with operation, caretPositionBefore, scrollPositionBefore
-  - Added `redoStack` and `redo()` method
-  - Implemented `recordInsert()`, `recordDelete()`, `recordReplace()` to record operations
-  - Updated all text mutation sites (17 locations) to use operation recording
-  - Added keyboard shortcuts: Ctrl+Shift+Z and Ctrl/Cmd+Y for redo
-  - Undo now restores both caret and scroll position
-  - All 12 tests pass
-- **Spec Reference**: `specs/05-text-buffer.md` - operation-based undo
-- **Files**: `src/engine/engine.h`, `src/engine/engine.cpp`
 
 ### P1-5: Pre-Compute Styles in LayoutObject
 - **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: None
-- **Solution**: Added font size caching and character-level style pre-computation:
-  - Added font size caching to LayoutObject with automatic invalidation
-  - Added ComputedCharStyles struct for character-level style caching
-  - TextLayoutObject::computeCharStyles() pre-computes styles during layout
-  - Painter now uses pre-computed styles instead of recomputing every paint
-  - Performance improvements: Font size lookups O(1), style arrays computed once per layout
-  - All 12 tests pass
-- **Spec Reference**: `specs/02-layout-system.md` - "fully resolved style information"
-- **Files**: `src/engine/layout_objects.cpp`, `src/engine/layout_objects.h`
 
 ### P1-6: Upgrade DrawText to Use Pre-Shaped Glyph Data
 - **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: P1-3
-- **Solution**: Added pre-shaped text infrastructure with backward-compatible API:
-  - Added ShapedTextRun struct with pre-decoded codepoints and x positions
-  - Extended DrawTextOp to support shaped data with backward-compatible API
-  - Painter::paintText() creates ShapedTextRun with pre-decoded UTF-8 codepoints and pre-computed positions
-  - Infrastructure in place for future backend optimization
-  - All 12 tests pass
-- **Spec Reference**: `specs/03-rendering-pipeline.md` - "glyph data (pre-shaped by layout)"
-- **Files**: `src/engine/paint_operations.h`, `src/engine/painter.cpp`
 
 ### P1-7: Upgrade DrawImage with Texture ID, Source Rect, Tint
 - **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: None
-- **Solution**: Extended DrawImageOp with pre-loaded texture support:
-  - Added `textureId` field (0 = load from path, non-zero = pre-loaded)
-  - Added `sourceRect` field for texture atlasing (normalized 0-1 coordinates)
-  - Added `tintColor` field for image colorization/effects
-  - Updated BatchRenderer::drawImage() to use source rect and tint
-  - Rasterizer uses textureId if provided, falls back to path-based loading
-  - Backwards compatible: convenience constructor defaults to full rect, white tint
-- **Files**: `src/engine/paint_operations.h`, `src/engine/paint_operations.cpp`, `src/engine/rasterizer.cpp`, `src/engine/batch_renderer.h`, `src/engine/batch_renderer.cpp`
 
 ### P1-8: Implement Viewport Culling in Rasterization
 - **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: P0-3, P1-2
-- **Solution**: Viewport culling was implemented as part of P1-2 (hierarchical PaintTree):
-  - `rasterize()` method accepts `PaintTree` and `viewport`, calling `rasterizeArtifact()` for traversal
-  - `rasterizeArtifact()` recursively processes artifacts with `boundsIntersectViewport()` check
-  - `boundsIntersectViewport()` implements proper AABB intersection test to skip subtrees outside viewport
-  - Entire subtrees are culled when bounds don't intersect viewport, improving performance
-- **Spec Reference**: `specs/04-rasterization.md` - tree traversal with culling
-- **Files**: `src/engine/rasterizer.cpp` (rasterizeArtifact(), boundsIntersectViewport())
 
 ---
 
@@ -268,11 +118,10 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/markdown_parser.cpp`
 
 ### P2-4: Implement layoutInlineFlow()
-- **Status**: NOT STARTED
+- **Status**: SUPERSEDED
 - **Complexity**: L
 - **Dependencies**: P0-4, P0-5
-- **Problem**: Stub at `layout_engine.cpp:232-238` with TODO comment
-- **Files**: `src/engine/layout_engine.cpp`
+- **Note**: The stub method layoutInlineFlow() was deleted as part of P3-2. The method was never called - explicit Text handling in performLayout() ensures TextLayoutObject::layout() is called directly. This item is no longer applicable.
 
 ### P2-5: Add Box Model (Margin/Padding)
 - **Status**: NOT STARTED
@@ -332,16 +181,16 @@ These must be resolved first as they block correct implementation of other featu
 ## P3 - LOW PRIORITY / DEAD CODE CLEANUP
 
 ### P3-1: Delete InlineLayoutObject Class
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: P0-5
-- **Location**: `layout_objects.h:69-73`, `layout_objects.cpp:94-100`
+- **Solution**: Deleted InlineLayoutObject class (layout_objects.h:75-79, layout_objects.cpp:117-123). Replaced usages in layout_engine.cpp with base LayoutObject using LayoutFlow::Block. The InlineLayoutObject was dead code - its layout() method was empty.
 
 ### P3-2: Delete LayoutFlow::Inline Enum
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: S
 - **Dependencies**: P3-1
-- **Location**: `layout_objects.h:27`
+- **Solution**: Deleted LayoutFlow::Inline enum value. Added explicit Text handling in performLayout() to ensure TextLayoutObject::layout() is called directly. Deleted layoutInlineFlow() method from LayoutEngine (was a stub). All layout objects now use LayoutFlow::Block.
 
 ### P3-3: Delete skipPropagate Flag
 - **Status**: COMPLETED
@@ -449,4 +298,16 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P1-6 marked COMPLETED (pre-shaped glyph data with ShapedTextRun)*
+*Last updated: 2026-01-14 - P3-1, P3-2 marked COMPLETED (dead code cleanup: InlineLayoutObject and LayoutFlow::Inline removed), P2-4 marked SUPERSEDED, cleaned up P0 and P1 solution details*
+
+## Change Summary (2026-01-14)
+
+**Dead Code Cleanup Completed:**
+- **P3-1**: Deleted InlineLayoutObject class - was unused dead code with empty layout() method
+- **P3-2**: Deleted LayoutFlow::Inline enum and layoutInlineFlow() stub method - explicit Text handling now calls TextLayoutObject directly
+- **P2-4**: Marked SUPERSEDED as layoutInlineFlow() no longer exists; work handled by direct Text handling in performLayout()
+
+**Documentation Cleanup:**
+- Removed detailed solution descriptions from completed P0 items (P0-1 through P0-5) to reduce file noise
+- Removed detailed solution descriptions from completed P1 items (P1-1 through P1-8) to improve readability
+- Kept brief status/complexity/dependency info for quick reference

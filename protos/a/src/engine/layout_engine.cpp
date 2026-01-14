@@ -60,16 +60,17 @@ void LayoutEngine::performLayout(LayoutObject* layoutRoot, const Size& available
             layoutTable(layoutRoot, availableSpace);
             return;
         }
+        // Text objects need their layout() called for shaping/wrapping
+        if (type == MarkdownObjectType::Text) {
+            layoutRoot->layout(availableSpace);
+            return;
+        }
         // TableRow and TableCell are handled by layoutTable/layoutTableRow
         // ListItem is handled by layoutBlockFlow
     }
 
-    // Perform layout based on flow type
-    if (layoutRoot->getFlow() == LayoutFlow::Block) {
-        layoutBlockFlow(layoutRoot, availableSpace);
-    } else {
-        layoutInlineFlow(layoutRoot, availableSpace);
-    }
+    // All layout objects use block flow (vertical stacking)
+    layoutBlockFlow(layoutRoot, availableSpace);
 }
 
 std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObject* object, bool inCodeBlock) {
@@ -112,7 +113,9 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
         case MarkdownObjectType::InlineCode:
         case MarkdownObjectType::Link:
         case MarkdownObjectType::Strikethrough:
-            return std::make_unique<InlineLayoutObject>(object);
+            // Inline formatting nodes are structural only - text is flattened with style ranges
+            // Use base LayoutObject as a pass-through container for children
+            return std::make_unique<LayoutObject>(object, LayoutFlow::Block);
 
         default:
             return std::make_unique<LayoutObject>(object, LayoutFlow::Block);
@@ -216,14 +219,6 @@ void LayoutEngine::propagatePositionToChildren(LayoutObject* parent, float paren
     }
 }
 
-void LayoutEngine::layoutInlineFlow(LayoutObject* layoutObject, const Size& availableSpace) {
-    // TODO: Implement inline flow layout
-    // - Flow children left-to-right
-    // - Break lines when necessary
-    // - Handle baseline alignment
-
-    layoutObject->layout(availableSpace);
-}
 
 // ============================================================================
 // Unified Layout Authority: Table and List Layout

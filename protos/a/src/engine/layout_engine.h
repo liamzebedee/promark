@@ -23,7 +23,6 @@ private:
     std::unique_ptr<LayoutObject> createLayoutObject(const MarkdownObject* object, bool inCodeBlock = false);
     std::unique_ptr<LayoutObject> createLayoutTree(const MarkdownObject* objectTree, bool inCodeBlock);
     void layoutBlockFlow(LayoutObject* layoutObject, const Size& availableSpace);
-    void layoutInlineFlow(LayoutObject* layoutObject, const Size& availableSpace);
     void propagatePositionToChildren(LayoutObject* parent, float parentX, float parentY);
 
     // Unified layout authority: LayoutEngine positions all objects
