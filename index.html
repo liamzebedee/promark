@@ -96,6 +96,29 @@
             padding: 4px 8px;
             border-radius: 4px;
         }
+        .progress-container {
+            width: 200px;
+            height: 8px;
+            background: #999;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(180deg, #4a90d9 0%, #2968b0 100%);
+            border-radius: 4px;
+            transition: width 0.1s ease-out;
+        }
+        .progress-text {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+        .progress-container.hidden, .progress-text.hidden {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -107,6 +130,10 @@
         <input type="text" id="mobile-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
         <textarea id="clipboard-helper" style="position:absolute;left:-9999px;"></textarea>
         <div id="status" class="status loading">Loading...</div>
+        <div class="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <div id="progress-text" class="progress-text">Downloading...</div>
         <p class="footer">Programmed in C++, OpenGL. <a href="https://github.com/liamzebedee/promark" target="_blank">GitHub</a></p>
         <div class="fps-counter"><span id="fps">500</span> FPS</div>
     </div>
@@ -150,16 +177,37 @@
         var clipboardHelper = document.getElementById('clipboard-helper');
         var moduleReady = false;
 
+        // Progress bar elements
+        var progressBar = document.getElementById('progress-bar');
+        var progressText = document.getElementById('progress-text');
+        var progressContainer = document.querySelector('.progress-container');
+
         // Module configuration
         var Module = {
             canvas: canvas,
             doNotCaptureKeyboard: true,
             print: function(t) { console.log(t); },
             printErr: function(t) { console.error(t); },
+            setStatus: function(text) {
+                if (text) {
+                    var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                    if (m) {
+                        var progress = (parseInt(m[2]) / parseInt(m[4])) * 100;
+                        progressBar.style.width = progress + '%';
+                        var mb = (parseInt(m[2]) / 1024 / 1024).toFixed(1);
+                        var totalMb = (parseInt(m[4]) / 1024 / 1024).toFixed(1);
+                        progressText.textContent = 'Downloading: ' + mb + ' / ' + totalMb + ' MB';
+                    } else {
+                        progressText.textContent = text;
+                    }
+                }
+            },
             onRuntimeInitialized: function() {
                 moduleReady = true;
                 document.getElementById('status').textContent = 'Ready';
                 document.getElementById('status').className = 'status ready';
+                progressContainer.classList.add('hidden');
+                progressText.classList.add('hidden');
                 canvas.focus();
                 resizeCanvas(); // Set initial size
                 console.log('Module ready, exports:', !!Module._handleKey, !!Module._insertText);
