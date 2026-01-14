@@ -75,6 +75,9 @@ public:
     // Get link URL at position (returns empty string if not on a link)
     std::string getLinkAtPosition(float x, float y) const;
 
+    // Get font size at a given DOM position (for vertical navigation step calculation)
+    float getFontSizeAt(int domPos) const;
+
 private:
     // Non-owning pointer to the authoritative TextBuffer
     const TextBuffer* textBuffer;

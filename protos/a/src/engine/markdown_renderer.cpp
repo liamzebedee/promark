@@ -1,4 +1,5 @@
 #include "markdown_renderer.h"
+#include "typography.h"
 #include <iostream>  // DEBUG
 
 MarkdownRenderer::MarkdownRenderer()
@@ -638,4 +639,22 @@ int MarkdownRenderer::rawToDOM(int rawPos) const {
 
     // Position is beyond all text objects
     return currentDOMPos;
+}
+
+float MarkdownRenderer::getFontSizeAt(int domPos) const {
+    if (!layoutTree) return Typography::BASE_FONT_SIZE;
+
+    std::vector<std::pair<const TextLayoutObject*, int>> textLayouts;
+    int pos = 0;
+    collectTextLayoutsWithPos(layoutTree.get(), textLayouts, pos);
+
+    for (const auto& [layout, layoutDOMPos] : textLayouts) {
+        int domLen = layout->getDOMLength();
+        if (domPos >= layoutDOMPos && domPos <= layoutDOMPos + domLen) {
+            return layout->getFontSize();
+        }
+    }
+
+    // Default to base font size if not found
+    return Typography::BASE_FONT_SIZE;
 }

@@ -878,44 +878,43 @@ void Engine::moveCursorVertically(int direction, bool extendSelection) {
         // Use current cursor X for hit testing (preserves horizontal position during vertical nav)
         float targetX = cursorX;
 
+        // Get the actual font size at the current position
+        // This is crucial for navigating from headings (which have larger fonts)
+        float currentFontSize = markdownRenderer->getFontSizeAt(domPos);
+
         // Calculate the visual line spacing for navigation
-        // In markdown mode, paragraphs are separated by block spacing, and each paragraph
-        // has its own height. The actual visual spacing between line tops includes:
-        // - The paragraph's content height (font size * number of lines)
-        // - Block spacing between paragraphs
-        // For simple single-line paragraphs, this is typically font_size + block_spacing,
-        // but empirically the actual spacing is closer to 2*font_size.
-        float lineHeight = Typography::BASE_FONT_SIZE;
-        // Use a larger step to ensure we land in the next line's hit region
+        // Use the actual font size at the cursor position to ensure we step far enough
+        // For headings, this will be larger; for regular text, it will be BASE_FONT_SIZE
+        float lineHeight = currentFontSize;
+        // Use a larger multiplier to ensure we land in the next line's hit region
         // The hit region for each line has a 0.2*fontSize offset
-        float lineSpacing = lineHeight * 2;  // Conservative step that works for standard paragraphs
+        float lineSpacing = lineHeight * 2.0f;
 
         // Calculate target Y position on adjacent visual line
         // getCursorXY returns the top of the current line
-        // The hit region for each line is offset by 0.2*fontSize from the rect top
         // To ensure we land inside the next line's hit region, aim for the vertical center
-        // of the target line (add half lineHeight to the base step)
         float targetY = cursorY + (direction * lineSpacing) + (lineHeight * 0.5f);
 
         // Use hit testing to find position at target coordinates
         // hitTest returns raw position
         int hitPos = markdownRenderer->hitTest(targetX, targetY);
 
-        // DEBUG: Print navigation info
-        std::cerr << "DEBUG moveCursorVertically: dir=" << direction
-                  << " cursorPos=" << cursorPos
-                  << " domPos=" << domPos
-                  << " cursorXY=(" << cursorX << "," << cursorY << ")"
-                  << " targetXY=(" << targetX << "," << targetY << ")"
-                  << " hitPos=" << hitPos << std::endl;
+        // If initial hit test didn't move us, try with progressively larger steps
+        // This handles cases where there are gaps between elements (e.g., block spacing)
+        if (hitPos == cursorPos) {
+            // Try up to 5 additional steps with increasing distance
+            for (int attempt = 1; attempt <= 5 && hitPos == cursorPos; attempt++) {
+                float additionalStep = lineHeight * attempt;
+                float retryY = targetY + (direction * additionalStep);
+                hitPos = markdownRenderer->hitTest(targetX, retryY);
+            }
+        }
 
         // Only use hitPos if it actually moved us (avoid staying in place)
         if (hitPos != cursorPos) {
             newPos = hitPos;
-        } else {
-            // If hit test didn't move us, we're at a document boundary
-            // newPos stays as cursorPos
         }
+        // If still same position after retries, we're at a document boundary
     } else {
         // Raw mode: use logical line navigation (original behavior)
         int currentLineStart = findLineStart(cursorPos);

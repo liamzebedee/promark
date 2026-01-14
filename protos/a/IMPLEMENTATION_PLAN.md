@@ -27,6 +27,25 @@
 - `tests/test_keyboard_shortcuts.cpp` - Added 7 tests for new shortcuts
 - `Makefile` - Added test file to build
 
+### Keyboard Navigation in Long Documents (2026-01-14)
+
+**Issue:** Up/Down arrow keys got stuck at certain positions when navigating long documents, particularly around headings.
+
+**Root Cause:** The vertical navigation step size was calculated using `Typography::BASE_FONT_SIZE` (16px), but headings have larger font sizes (e.g., H2 is ~33px). When the cursor was on a heading, the step was too small to move past the heading's hit region.
+
+**Solution:**
+- Added `getFontSizeAt(domPos)` method to MarkdownRenderer to get the actual font size at cursor position
+- Modified `moveCursorVertically()` to use actual font size for step calculation
+- Added retry logic with progressively larger steps to handle edge cases (gaps between elements)
+
+**Files Modified:**
+- `src/engine/markdown_renderer.h` - Added `getFontSizeAt()` declaration
+- `src/engine/markdown_renderer.cpp` - Implemented `getFontSizeAt()`
+- `src/engine/engine.h` - Added `getCursorPosition()` method for testing
+- `src/engine/engine.cpp` - Fixed `moveCursorVertically()` to use actual font size
+- `tests/test_long_document_navigation.cpp` - Added 4 tests for navigation
+- `Makefile` - Added test file to build
+
 ### Home/End Keys Navigation (2026-01-14)
 
 **Issue:** Home and End keys went to document start/end instead of line start/end

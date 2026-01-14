@@ -51,6 +51,9 @@ public:
     // Text insertion (for drag-and-drop, etc.)
     void insertText(const std::string& text);
 
+    // Cursor position (for testing)
+    int getCursorPosition() const { return cursorPos; }
+
 private:
     bool wantsToClose;
     bool leftMouseHeld;
