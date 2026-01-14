@@ -103,12 +103,16 @@ These must be resolved first as they block correct implementation of other featu
 - **Files**: `src/engine/markdown_parser.cpp`
 
 ### P2-2: Add Missing Node Types (ThematicBreak)
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Complexity**: M
 - **Dependencies**: P0-5
-- **Problem**: ThematicBreak node not implemented (LineBreak is already implemented via `LineBreakObject`)
-- **Spec Reference**: `specs/01-document-model.md`
-- **Files**: `src/engine/markdown_objects.h`, `src/engine/markdown_parser.cpp`
+- **Solution**: Implemented ThematicBreak node support:
+  - Added ThematicBreak to MarkdownObjectType enum
+  - Added ThematicBreakObject class
+  - Implemented parsing in markdown_parser.cpp for ---, ***, ___ patterns
+  - Added layout handling in layout_engine.cpp with fixed height
+  - Added paintThematicBreak() in painter.cpp to render horizontal line
+- **Files**: `src/engine/markdown_objects.h`, `src/engine/markdown_parser.cpp`, `src/engine/layout_engine.cpp`, `src/engine/painter.cpp`
 
 ### P2-3: Nested Inline Formatting
 - **Status**: COMPLETED
@@ -302,7 +306,7 @@ These groups can be worked on concurrently:
 
 ---
 
-*Last updated: 2026-01-14 - P3-1, P3-2 marked COMPLETED (dead code cleanup: InlineLayoutObject and LayoutFlow::Inline removed), P2-4 marked SUPERSEDED, cleaned up P0 and P1 solution details*
+*Last updated: 2026-01-14 - P2-2 marked COMPLETED (ThematicBreak node implementation)*
 
 ## Change Summary (2026-01-14)
 

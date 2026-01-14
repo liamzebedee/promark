@@ -561,6 +561,32 @@ continue_parsing:
             continue;
         }
 
+        // Check for thematic break (---, ***, ___)
+        // Must have 3+ of the same character, with only optional spaces between
+        if (line.length() >= 3 && (line[0] == '-' || line[0] == '*' || line[0] == '_')) {
+            char breakChar = line[0];
+            bool isThematicBreak = true;
+            int charCount = 0;
+
+            for (size_t i = 0; i < line.length(); i++) {
+                if (line[i] == breakChar) {
+                    charCount++;
+                } else if (line[i] != ' ' && line[i] != '\t') {
+                    // Non-matching, non-whitespace character
+                    isThematicBreak = false;
+                    break;
+                }
+            }
+
+            if (isThematicBreak && charCount >= 3) {
+                auto thematicBreak = std::make_unique<ThematicBreakObject>();
+                thematicBreak->setRawRange(static_cast<int>(lineStart), static_cast<int>(nextLineStart));
+                document->addChild(std::move(thematicBreak));
+                pos = nextLineStart;
+                continue;
+            }
+        }
+
         // Check for code block (```)
         if (line.length() >= 3 && line[0] == '`' && line[1] == '`' && line[2] == '`') {
             // Extract optional language identifier

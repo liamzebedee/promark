@@ -44,6 +44,9 @@ private:
     // List painting
     void paintListItem(const ListItemLayoutObject* listItemObject, DisplayList& displayList);
 
+    // Thematic break (horizontal rule) painting
+    void paintThematicBreak(const LayoutObject* layoutObject, DisplayList& displayList);
+
     // Caret/selection painting
     void paintCaret(DisplayList& displayList, const CaretState& caret,
                     const char* text, int textLength, const LayoutObject* layoutRoot);

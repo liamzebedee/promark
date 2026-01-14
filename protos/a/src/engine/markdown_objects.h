@@ -15,6 +15,7 @@ enum class MarkdownObjectType {
     BlockQuote,
     CodeBlock,
     Frontmatter,
+    ThematicBreak,  // Horizontal rule (---, ***, ___)
     Equation,
     List,
     ListItem,
@@ -250,4 +251,9 @@ public:
 class StrikethroughObject : public MarkdownObject {
 public:
     StrikethroughObject();
+};
+
+class ThematicBreakObject : public MarkdownObject {
+public:
+    ThematicBreakObject();
 };

@@ -65,6 +65,12 @@ void LayoutEngine::performLayout(LayoutObject* layoutRoot, const Size& available
             layoutRoot->layout(availableSpace);
             return;
         }
+        // ThematicBreak has fixed height (no children to compute from)
+        if (type == MarkdownObjectType::ThematicBreak) {
+            float hrHeight = Typography::BLOCK_SPACING;  // Use standard spacing as height
+            layoutRoot->setRect(Rect(0, 0, availableSpace.width, hrHeight));
+            return;
+        }
         // TableRow and TableCell are handled by layoutTable/layoutTableRow
         // ListItem is handled by layoutBlockFlow
     }
@@ -82,6 +88,7 @@ std::unique_ptr<LayoutObject> LayoutEngine::createLayoutObject(const MarkdownObj
         case MarkdownObjectType::CodeBlock:
         case MarkdownObjectType::Frontmatter:
         case MarkdownObjectType::List:
+        case MarkdownObjectType::ThematicBreak:
             return std::make_unique<BlockLayoutObject>(object);
 
         case MarkdownObjectType::ListItem:

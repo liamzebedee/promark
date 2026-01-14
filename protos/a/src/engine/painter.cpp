@@ -65,6 +65,8 @@ std::unique_ptr<PaintArtifact> Painter::paintLayoutObject(const LayoutObject* la
         paintTableCell(cellObject, artifact->displayItems);
     } else if (const ListItemLayoutObject* listItemObject = dynamic_cast<const ListItemLayoutObject*>(layoutObject)) {
         paintListItem(listItemObject, artifact->displayItems);
+    } else if (layoutObject->getSourceObject()->getType() == MarkdownObjectType::ThematicBreak) {
+        paintThematicBreak(layoutObject, artifact->displayItems);
     }
 
     // Paint borders
@@ -318,6 +320,25 @@ void Painter::paintListItem(const ListItemLayoutObject* listItemObject, DisplayL
         );
         displayList.push_back(std::move(textOp));
     }
+}
+
+void Painter::paintThematicBreak(const LayoutObject* layoutObject, DisplayList& displayList) {
+    const Rect& rect = layoutObject->getRect();
+
+    // Draw a horizontal line centered in the available height
+    Color lineColor(200, 200, 200, 255);  // Gray, matching blockquote bar
+    float lineThickness = 1.0f;
+    float lineY = rect.position.y + rect.size.height / 2;
+    float lineStartX = rect.position.x;
+    float lineEndX = rect.position.x + rect.size.width;
+
+    auto lineOp = std::make_unique<DrawLineOp>(
+        Point(lineStartX, lineY),
+        Point(lineEndX, lineY),
+        lineThickness,
+        lineColor
+    );
+    displayList.push_back(std::move(lineOp));
 }
 
 void Painter::paintBackground(const LayoutObject* layoutObject, DisplayList& displayList) {

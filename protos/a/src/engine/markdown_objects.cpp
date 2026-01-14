@@ -167,3 +167,7 @@ LineBreakObject::LineBreakObject()
 StrikethroughObject::StrikethroughObject()
     : MarkdownObject(MarkdownObjectType::Strikethrough) {
 }
+
+ThematicBreakObject::ThematicBreakObject()
+    : MarkdownObject(MarkdownObjectType::ThematicBreak) {
+}
