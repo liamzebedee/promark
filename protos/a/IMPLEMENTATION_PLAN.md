@@ -215,3 +215,24 @@ This approach combines the recursive parsing capability of the tree model with t
 - Link inside bold: `**Bold [link](url)**` → "Bold" in bold, "link" as bold+link
 - Bold inside link: `[link **bold**](url)` → "link" as link, "bold" as bold+link
 - All 107 tests passing
+
+### List and Table Layout Overlap (2026-01-15)
+
+**Issue:** Lists and tables in visual mode had severe layout overlap. List items rendered on top of table headers, numbered lists overlapped with bullet lists, and elements following lists were positioned incorrectly.
+
+**Root Cause:** The `propagatePositionToChildren()` function was being called multiple times for nested containers:
+1. When List's `layoutBlockFlow()` processed its ListItem children, it called `propagatePositionToChildren()` to set their positions relative to the List
+2. When Document's `layoutBlockFlow()` processed the List, it called `propagatePositionToChildren()` again recursively
+3. This caused child positions to be double-offset (the Y position within the container was added twice)
+
+The same issue affected Table layout - `layoutTable()` was also calling `propagatePositionToChildren()` for table rows.
+
+**Solution:**
+Only call `propagatePositionToChildren()` from the root Document level. Nested containers (Lists, BlockQuotes, Tables) should not propagate positions themselves - the root's recursive propagation handles all descendants.
+
+**Files Modified:**
+- `src/engine/layout_engine.cpp` - Guarded propagation calls with `if (isRoot)` and removed call from `layoutTable()`
+- `tests/test_list_layout_debug.cpp` (NEW) - Added debug tests for list layout verification
+- `Makefile` - Added new test file
+
+**Result:** Lists, tables, and all block elements now position correctly without overlap. All 113 tests passing.

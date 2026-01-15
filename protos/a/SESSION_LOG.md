@@ -108,3 +108,60 @@ The newer `createInlineChildren()` function properly supports recursive nested f
 **Exit condition met:** All bugs in `specs/bug-*.md` have been fixed and moved to `specs/resolved/`.
 
 No unresolved bug spec files remain. The codebase is stable with all tests passing.
+
+---
+
+## Session: 2026-01-15
+
+### Current Bug: `specs/bug-list-table-overlap.md`
+
+**Bug Summary:** Lists and tables in visual mode had severe layout overlap. List items rendered on top of table headers, numbered lists overlapped with bullet lists, and elements following lists were positioned incorrectly.
+
+### Work Attempts
+
+| # | Approach | Result | Notes |
+|---|----------|--------|-------|
+| 1 | Run E2E tests and visually inspect | Bug confirmed | Screenshots showed clear overlap |
+| 2 | Add debug output to trace Y positions | Positions correct at root | Issue in position propagation |
+| 3 | Fix: Only propagate positions from root | **Success** | Removed double-propagation |
+
+### Root Cause Analysis
+
+The `propagatePositionToChildren()` function was being called multiple times for nested containers:
+
+1. When List's `layoutBlockFlow()` processed its ListItem children, it called `propagatePositionToChildren()` to set their positions relative to the List
+2. Then when Document's `layoutBlockFlow()` processed the List, it called `propagatePositionToChildren()` again, which recursively updated all descendants
+3. This caused child positions to be double-offset (the Y position within the container was added twice)
+
+Same issue affected Table layout - `layoutTable()` was calling `propagatePositionToChildren()` for table rows.
+
+### Solution
+
+Only call `propagatePositionToChildren()` from the root Document level. Nested containers (Lists, BlockQuotes, Tables) should not propagate positions themselves - the root's recursive propagation handles all descendants.
+
+**Changes:**
+1. Guard `propagatePositionToChildren()` calls in `layoutBlockFlow()` with `if (isRoot)`
+2. Remove `propagatePositionToChildren()` call from `layoutTable()`
+3. Guard empty paragraph propagation with `if (isRoot)`
+
+### Files Modified
+
+- `src/engine/layout_engine.cpp` - Fixed position propagation (3 locations)
+- `tests/test_list_layout_debug.cpp` - Added debug tests for list layout
+- `Makefile` - Added new test file
+
+---
+
+## Resolved This Session
+
+### `bug-list-table-overlap.md` - Fixed
+
+**Status:** Fixed. Lists, tables, and all block elements now position correctly without overlap.
+
+---
+
+## Notes & Learnings
+
+- 20 bugs resolved and moved to `specs/resolved/`
+- All tests passing (113 tests)
+- Key insight: Position propagation should only happen once from the root, not from every container level

@@ -97,7 +97,9 @@ TEST_SOURCES = $(TEST_DIR)/run_tests.cpp \
                $(TEST_DIR)/test_formatting_spacing.cpp \
                $(TEST_DIR)/test_parser_debug.cpp \
                $(TEST_DIR)/test_visual_mode_empty_lines.cpp \
-               $(TEST_DIR)/test_link_in_bold_debug.cpp
+               $(TEST_DIR)/test_link_in_bold_debug.cpp \
+               $(TEST_DIR)/test_double_enter.cpp \
+               $(TEST_DIR)/test_list_layout_debug.cpp
 
 # Test objects (engine objects + test-specific objects)
 ENGINE_OBJECTS = $(patsubst %.cpp,$(BUILD_DIR)/%.o,$(ENGINE_SRC))

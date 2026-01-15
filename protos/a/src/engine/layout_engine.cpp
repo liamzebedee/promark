@@ -138,6 +138,12 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
     bool isBlockQuote = (type == MarkdownObjectType::BlockQuote);
     bool isCodeBlock = (type == MarkdownObjectType::CodeBlock);
     bool isFrontmatter = (type == MarkdownObjectType::Frontmatter);
+    bool isList = (type == MarkdownObjectType::List);
+
+    // Block spacing should only be added between block-level children
+    // Containers like Document, BlockQuote, and List contain block elements (paragraphs, etc.)
+    // Containers like Paragraph and Heading contain inline elements (text) - no block spacing
+    bool addBlockSpacing = isRoot || isBlockQuote || isList;
 
     float marginLeft = isRoot ? Typography::DOCUMENT_MARGIN : 0.0f;
     const float marginTop = isRoot ? Typography::DOCUMENT_MARGIN : 0.0f;
@@ -173,19 +179,27 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
                 }
             }
             if (isEmpty) {
-                // Empty paragraphs get minimum height (one line) so they're clickable
-                // This matches standard text editor behavior where empty lines are visible
-                float emptyLineHeight = Typography::BASE_FONT_SIZE;
+                // Visual mode: empty paragraphs are collapsed (0 height)
+                // This matches browser behavior where empty lines between blocks
+                // don't create visible space - spacing comes from block margins only.
+                // The DOM positions still exist for cursor navigation.
+                float emptyLineHeight = 0;
                 Size childAvailable(availableSpace.width - marginLeft * 2, availableSpace.height - currentY);
                 for (const auto& grandchild : child->getChildren()) {
                     grandchild->layout(childAvailable);
+                    // Also collapse the TextLayoutObject's rect height
+                    // so hitTest will skip it (it checks rect.size.height)
+                    const Rect& grandchildRect = grandchild->getRect();
+                    grandchild->setRect(Rect(grandchildRect.position.x, grandchildRect.position.y,
+                                            grandchildRect.size.width, 0));
                 }
                 child->setRect(Rect(marginLeft, currentY, availableSpace.width - marginLeft * 2, emptyLineHeight));
-                // Propagate position to children (TextLayoutObject) for cursor positioning
-                propagatePositionToChildren(child.get(), marginLeft, currentY);
-                // Advance Y position by the empty line height plus block spacing
-                currentY += emptyLineHeight + Typography::BLOCK_SPACING;
-                isFirstVisibleChild = false;
+                // Propagate position to children only from root (to avoid double-propagation)
+                if (isRoot) {
+                    propagatePositionToChildren(child.get(), marginLeft, currentY);
+                }
+                // Don't advance Y position - empty paragraphs take no visual space
+                // Don't add block spacing for collapsed elements
                 continue;
             }
         }
@@ -203,14 +217,20 @@ void LayoutEngine::layoutBlockFlow(LayoutObject* layoutObject, const Size& avail
         float childX = marginLeft;
         float childY = currentY;
 
-        // Set child position and propagate to grandchildren
-        // Engine is the single coordinator - always propagate positions
+        // Set child position
         child->setRect(Rect(childX, childY, childRect.size.width, childRect.size.height));
-        propagatePositionToChildren(child.get(), childX, childY);
+
+        // Only propagate positions from root - nested containers (List, BlockQuote)
+        // don't need to propagate because the root will recursively propagate to all descendants
+        if (isRoot) {
+            propagatePositionToChildren(child.get(), childX, childY);
+        }
 
         // Add spacing after this element (block spacing between elements)
         currentY += childRect.size.height;
-        if (!isFirstVisibleChild || childRect.size.height > 0) {
+        // Only add block spacing between block-level children (paragraphs, headings, etc.)
+        // Not inside paragraphs/headings where children are inline text elements
+        if (addBlockSpacing && (!isFirstVisibleChild || childRect.size.height > 0)) {
             currentY += Typography::BLOCK_SPACING;
         }
         isFirstVisibleChild = false;
@@ -278,8 +298,8 @@ void LayoutEngine::layoutTable(LayoutObject* table, const Size& availableSpace) 
 
         const Rect& rowRect = child->getRect();
         // Position row - Engine is the sole authority
+        // Don't propagate here - root will propagate to all descendants
         child->setRect(Rect(0, y, availableSpace.width, rowRect.size.height));
-        propagatePositionToChildren(child.get(), 0, y);
 
         y += rowRect.size.height + borderWidth;
     }
